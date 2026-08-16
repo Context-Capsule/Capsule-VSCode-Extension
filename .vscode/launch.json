@@ -1,4 +1,3 @@
-// Launches a real Extension Development Host after a finite production-style build.
 {
   "version": "0.2.0",
   "configurations": [
