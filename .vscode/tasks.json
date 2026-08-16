@@ -2,13 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "watch",
-      "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
-      "dependsOrder": "parallel",
+      "type": "npm",
+      "script": "compile",
+      "label": "npm: compile",
       "problemMatcher": [],
-      "isBackground": true,
       "group": { "kind": "build", "isDefault": true },
-      "presentation": { "reveal": "never", "panel": "dedicated" }
+      "presentation": { "reveal": "silent", "panel": "dedicated" }
     },
     {
       "type": "npm",
@@ -25,6 +24,13 @@
       "problemMatcher": "$tsc-watch",
       "isBackground": true,
       "presentation": { "group": "watch", "reveal": "never" }
+    },
+    {
+      "label": "watch",
+      "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "presentation": { "reveal": "never", "panel": "dedicated" }
     },
     {
       "type": "npm",
