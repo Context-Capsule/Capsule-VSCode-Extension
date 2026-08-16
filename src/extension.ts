@@ -77,8 +77,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.tabGroups.onDidChangeTabGroups(() => scheduleSync('tab groups changed')),
     vscode.window.onDidChangeActiveTextEditor(() => scheduleSync('active editor changed')),
     vscode.window.onDidChangeVisibleTextEditors(() => scheduleSync('visible editors changed')),
+    vscode.window.onDidChangeTextEditorSelection(() => scheduleSync('selection changed')),
+    vscode.window.onDidChangeTextEditorViewColumn(() => scheduleSync('editor group changed')),
     vscode.workspace.onDidChangeWorkspaceFolders(() => scheduleSync('workspace folders changed')),
-    vscode.workspace.onDidChangeTextDocument(() => scheduleSync('document changed')),
   ];
   context.subscriptions.push(...subscriptions);
   void syncNow('activation').catch(error => output.appendLine(`initial sync failed: ${String(error)}`));
