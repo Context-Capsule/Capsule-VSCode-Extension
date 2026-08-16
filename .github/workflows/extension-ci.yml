@@ -48,11 +48,16 @@ jobs:
       - name: Start actual esbuild watch and wait for bundle
         shell: pwsh
         run: |
-          $job = Start-Process npm -ArgumentList @('run','watch:esbuild') -PassThru -NoNewWindow
+          Remove-Item 'dist/extension.js' -ErrorAction SilentlyContinue
+          $job = Start-Process $env:ComSpec -ArgumentList @('/d','/s','/c','npm run watch:esbuild') -PassThru -NoNewWindow
           try {
             $deadline = (Get-Date).AddSeconds(30)
-            while ((Get-Date) -lt $deadline -and -not (Test-Path 'dist/extension.js')) { Start-Sleep -Milliseconds 250 }
+            while ((Get-Date) -lt $deadline -and -not (Test-Path 'dist/extension.js')) {
+              if ($job.HasExited) { throw "watch:esbuild exited early with code $($job.ExitCode)" }
+              Start-Sleep -Milliseconds 250
+            }
             if (-not (Test-Path 'dist/extension.js')) { throw 'watch:esbuild did not produce dist/extension.js' }
+            Write-Host 'Actual npm run watch:esbuild produced the extension bundle.'
           } finally {
             taskkill /PID $job.Id /T /F 2>$null | Out-Null
             $global:LASTEXITCODE = 0
