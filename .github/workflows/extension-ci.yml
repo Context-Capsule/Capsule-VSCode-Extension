@@ -38,13 +38,21 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Verify watch task has no external esbuild matcher dependency
+      - name: Verify F5 and watch tasks have no external esbuild matcher dependency
         shell: pwsh
         run: |
-          $tasks = Get-Content .vscode/tasks.json -Raw
-          if ($tasks -match '\$esbuild-watch') { throw 'tasks.json still depends on the optional $esbuild-watch matcher' }
+          $tasksText = Get-Content .vscode/tasks.json -Raw
+          if ($tasksText -match '\$esbuild-watch') { throw 'tasks.json still depends on the optional $esbuild-watch matcher' }
           $extensions = Get-Content .vscode/extensions.json -Raw
           if ($extensions -match 'esbuild-problem-matchers') { throw 'extensions.json still recommends the removed matcher dependency' }
+          $launch = Get-Content .vscode/launch.json -Raw | ConvertFrom-Json
+          if ($launch.configurations[0].preLaunchTask -ne 'npm: compile') {
+            throw 'F5 must use the finite npm: compile task instead of a background watch task'
+          }
+          $tasks = $tasksText | ConvertFrom-Json
+          $compile = $tasks.tasks | Where-Object { $_.label -eq 'npm: compile' } | Select-Object -First 1
+          if (-not $compile) { throw 'tasks.json is missing the npm: compile task used by F5' }
+          if ($compile.isBackground) { throw 'F5 compile task must be finite, not background' }
       - name: Start actual esbuild watch and wait for bundle
         shell: pwsh
         run: |
