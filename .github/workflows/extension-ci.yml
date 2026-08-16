@@ -1,0 +1,59 @@
+name: VS Code Extension CI
+
+on:
+  push:
+    branches: [main, 'agent/**']
+  pull_request:
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check-types
+      - run: npm run lint
+      - run: npm run compile
+      - name: Extension Development Host tests (Windows)
+        if: runner.os == 'Windows'
+        run: npm test
+      - name: Extension Development Host tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm test
+
+  watch-task-contract:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify watch task has no external esbuild matcher dependency
+        shell: pwsh
+        run: |
+          $tasks = Get-Content .vscode/tasks.json -Raw
+          if ($tasks -match '\$esbuild-watch') { throw 'tasks.json still depends on the optional $esbuild-watch matcher' }
+          $extensions = Get-Content .vscode/extensions.json -Raw
+          if ($extensions -match 'esbuild-problem-matchers') { throw 'extensions.json still recommends the removed matcher dependency' }
+      - name: Start actual esbuild watch and wait for bundle
+        shell: pwsh
+        run: |
+          $job = Start-Process npm -ArgumentList @('run','watch:esbuild') -PassThru -NoNewWindow
+          try {
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Get-Date) -lt $deadline -and -not (Test-Path 'dist/extension.js')) { Start-Sleep -Milliseconds 250 }
+            if (-not (Test-Path 'dist/extension.js')) { throw 'watch:esbuild did not produce dist/extension.js' }
+          } finally {
+            taskkill /PID $job.Id /T /F 2>$null | Out-Null
+            $global:LASTEXITCODE = 0
+          }
