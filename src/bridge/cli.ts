@@ -22,10 +22,15 @@ async function runCli(args: string[]): Promise<string> {
 }
 
 export async function fetchCapsuleSnapshot(name: string): Promise<VsCodeSnapshot> {
-  const output = await runCli(['vscode', 'get', name, '--json']);
-  return JSON.parse(output) as VsCodeSnapshot;
+  const output = await runCli(['show', name, '--json']);
+  const stored = JSON.parse(output) as { snapshot?: { editors?: { vscode?: VsCodeSnapshot | null } } };
+  const snapshot = stored.snapshot?.editors?.vscode;
+  if (!snapshot) throw new Error(`Capsule '${name}' has no recent VS Code snapshot.`);
+  if (snapshot.schemaVersion !== 1) throw new Error(`Unsupported VS Code snapshot schema ${snapshot.schemaVersion}.`);
+  return snapshot;
 }
 
 export async function checkCliConnection(): Promise<{ cliPath: string; output: string }> {
-  return { cliPath: configuredCliPath(), output: (await runCli(['vscode', 'status', '--json'])).trim() };
+  const output = await runCli(['--help']);
+  return { cliPath: configuredCliPath(), output: output.trim() || 'Context Capsule CLI responded successfully.' };
 }
