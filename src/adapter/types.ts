@@ -1,0 +1,54 @@
+export const VSCODE_SNAPSHOT_SCHEMA_VERSION = 1;
+
+export interface WorkspaceFolderSnapshot {
+  uri: string;
+  name: string;
+  index: number;
+}
+
+export interface SelectionSnapshot {
+  anchor: [number, number];
+  active: [number, number];
+}
+
+export interface EditorSelectionSnapshot {
+  uri: string;
+  viewColumn?: number;
+  selections: SelectionSnapshot[];
+}
+
+export interface TabSnapshot {
+  label: string;
+  inputKind: string;
+  uri?: string;
+  active: boolean;
+  dirty: boolean;
+  pinned: boolean;
+  preview: boolean;
+  restorable: boolean;
+}
+
+export interface TabGroupSnapshot {
+  viewColumn?: number;
+  active: boolean;
+  tabs: TabSnapshot[];
+}
+
+export interface VsCodeSnapshot {
+  schemaVersion: number;
+  capturedAtUnixMs: number;
+  appName: string;
+  appHost: string;
+  remoteName?: string;
+  workspaceTrusted: boolean;
+  workspaceFile?: string;
+  workspaceFolders: WorkspaceFolderSnapshot[];
+  tabGroups: TabGroupSnapshot[];
+  visibleEditorSelections: EditorSelectionSnapshot[];
+  activeEditorUri?: string;
+}
+
+export interface RuntimeEnvelope {
+  updatedAtUnixMs: number;
+  snapshot: VsCodeSnapshot;
+}

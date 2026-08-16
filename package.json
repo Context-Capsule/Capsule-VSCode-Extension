@@ -2,22 +2,45 @@
   "name": "context-capsule",
   "displayName": "Context Capsule",
   "description": "Capture and restore VS Code workspace context with Context Capsule.",
-  "version": "0.0.1",
-  "engines": {
-    "vscode": "^1.125.0"
-  },
-  "categories": [
-    "Other"
+  "version": "0.1.0",
+  "publisher": "context-capsule",
+  "engines": { "vscode": "^1.125.0" },
+  "categories": ["Other"],
+  "extensionKind": ["ui"],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:context-capsule.inspect",
+    "onCommand:context-capsule.sync",
+    "onCommand:context-capsule.restore",
+    "onCommand:context-capsule.diagnostics"
   ],
-  "activationEvents": [],
   "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Context capture remains available, but restore and the configured CLI executable are disabled until the workspace is trusted.",
+      "restrictedConfigurations": ["contextCapsule.cliPath"]
+    },
+    "virtualWorkspaces": true
+  },
   "contributes": {
     "commands": [
-      {
-        "command": "context-capsule.helloWorld",
-        "title": "Hello World"
+      { "command": "context-capsule.inspect", "title": "Context Capsule: Inspect VS Code Context" },
+      { "command": "context-capsule.sync", "title": "Context Capsule: Sync VS Code Context" },
+      { "command": "context-capsule.restore", "title": "Context Capsule: Restore VS Code Context from Capsule" },
+      { "command": "context-capsule.diagnostics", "title": "Context Capsule: Connection Diagnostics" }
+    ],
+    "configuration": {
+      "title": "Context Capsule",
+      "properties": {
+        "contextCapsule.cliPath": {
+          "type": "string",
+          "default": "capsule",
+          "scope": "machine",
+          "description": "Path to the Context Capsule CLI executable used for diagnostics and restoring saved VS Code snapshots. Live VS Code capture does not require the CLI process to stay running."
+        }
       }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -28,7 +51,7 @@
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "pretest": "npm run compile-tests && npm run compile",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test"
@@ -45,8 +68,5 @@
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.0.0"
   },
-  "overrides": {
-    "diff": "^8.0.4",
-    "serialize-javascript": "^7.0.6"
-  }
+  "overrides": { "diff": "^8.0.4", "serialize-javascript": "^7.0.6" }
 }

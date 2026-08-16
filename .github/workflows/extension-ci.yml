@@ -1,0 +1,72 @@
+name: VS Code Extension CI
+
+on:
+  push:
+    branches: [main, 'agent/**']
+  pull_request:
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check-types
+      - run: npm run lint
+      - run: npm run compile
+      - name: Extension Development Host tests (Windows)
+        if: runner.os == 'Windows'
+        run: npm test
+      - name: Extension Development Host tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm test
+
+  watch-task-contract:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify F5 and watch tasks have no external esbuild matcher dependency
+        shell: pwsh
+        run: |
+          $tasksText = Get-Content .vscode/tasks.json -Raw
+          if ($tasksText -match '\$esbuild-watch') { throw 'tasks.json still depends on the optional $esbuild-watch matcher' }
+          $extensions = Get-Content .vscode/extensions.json -Raw
+          if ($extensions -match 'esbuild-problem-matchers') { throw 'extensions.json still recommends the removed matcher dependency' }
+          $launch = Get-Content .vscode/launch.json -Raw | ConvertFrom-Json
+          if ($launch.configurations[0].preLaunchTask -ne 'npm: compile') {
+            throw 'F5 must use the finite npm: compile task instead of a background watch task'
+          }
+          $tasks = $tasksText | ConvertFrom-Json
+          $compile = $tasks.tasks | Where-Object { $_.label -eq 'npm: compile' } | Select-Object -First 1
+          if (-not $compile) { throw 'tasks.json is missing the npm: compile task used by F5' }
+          if ($compile.isBackground) { throw 'F5 compile task must be finite, not background' }
+      - name: Start actual esbuild watch and wait for bundle
+        shell: pwsh
+        run: |
+          Remove-Item 'dist/extension.js' -ErrorAction SilentlyContinue
+          $job = Start-Process $env:ComSpec -ArgumentList @('/d','/s','/c','npm run watch:esbuild') -PassThru -NoNewWindow
+          try {
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Get-Date) -lt $deadline -and -not (Test-Path 'dist/extension.js')) {
+              if ($job.HasExited) { throw "watch:esbuild exited early with code $($job.ExitCode)" }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not (Test-Path 'dist/extension.js')) { throw 'watch:esbuild did not produce dist/extension.js' }
+            Write-Host 'Actual npm run watch:esbuild produced the extension bundle.'
+          } finally {
+            taskkill /PID $job.Id /T /F 2>$null | Out-Null
+            $global:LASTEXITCODE = 0
+          }

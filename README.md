@@ -1,71 +1,40 @@
-# context-capsule README
+# Context Capsule — VS Code Adapter
 
-This is the README for your extension "context-capsule". After writing up a brief description, we recommend including the following sections.
+Captures restorable VS Code workspace/editor context for Context Capsule without snapshotting the VS Code process or file contents.
 
-## Features
+## Captured state
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- workspace file and workspace folders
+- local/remote VS Code host context
+- editor groups and text tabs
+- tab order, active/dirty/pinned/preview metadata
+- visible text-editor selections/cursors
+- active text editor
 
-For example if there is an image subfolder under your extension project workspace:
+Non-text/custom tabs are recorded as context but marked non-restorable until a safe adapter exists for that tab type.
 
-\!\[feature X\]\(images/feature-x.png\)
+The extension continuously writes an atomic live snapshot to the Context Capsule runtime directory. `capsule save` reads that recent snapshot into SQLite. Restoring a saved VS Code snapshot is initiated by `Context Capsule: Restore VS Code Context from Capsule`, which calls the local CLI only to retrieve the saved semantic snapshot.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## Development
 
-## Requirements
+```powershell
+npm ci
+npm run compile
+npm test
+```
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+Press **F5** to launch an Extension Development Host. The generated `$esbuild-watch` dependency has been removed; watch tasks work without installing a separate problem-matcher extension.
 
-## Extension Settings
+## CLI connection
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+Install/build Capsule CLI and ensure `capsule` is on PATH, or set the machine-scoped `contextCapsule.cliPath` setting to the full executable path.
 
-For example:
+Use `Context Capsule: Connection Diagnostics` to verify the CLI and show the runtime state path.
 
-This extension contributes the following settings:
+## Safety
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+- no file contents are persisted by this adapter
+- no VS Code process-memory snapshotting
+- restore does not close unrelated existing tabs
+- restore is disabled in untrusted workspaces
+- the CLI path setting is machine-scoped and restricted in untrusted workspaces
