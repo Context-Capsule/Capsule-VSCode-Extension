@@ -16,7 +16,11 @@
   ],
   "main": "./dist/extension.js",
   "capabilities": {
-    "untrustedWorkspaces": { "supported": "limited", "restrictedConfigurations": ["contextCapsule.cliPath"] },
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Context capture remains available, but restore and the configured CLI executable are disabled until the workspace is trusted.",
+      "restrictedConfigurations": ["contextCapsule.cliPath"]
+    },
     "virtualWorkspaces": true
   },
   "contributes": {
