@@ -5,7 +5,9 @@ import { runtimeStatePath, writeRuntimeState } from './adapter/state';
 import { checkCliConnection, fetchCapsuleSnapshot } from './bridge/cli';
 
 const SYNC_DEBOUNCE_MS = 350;
+const HEARTBEAT_MS = 30_000;
 let syncTimer: NodeJS.Timeout | undefined;
+let heartbeatTimer: NodeJS.Timeout | undefined;
 let output: vscode.OutputChannel;
 
 async function syncNow(reason: string): Promise<void> {
@@ -82,9 +84,22 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeWorkspaceFolders(() => scheduleSync('workspace folders changed')),
   ];
   context.subscriptions.push(...subscriptions);
+
+  heartbeatTimer = setInterval(
+    () => void syncNow('heartbeat').catch(error => output.appendLine(`heartbeat failed: ${String(error)}`)),
+    HEARTBEAT_MS,
+  );
+  context.subscriptions.push({
+    dispose: () => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
+    },
+  });
+
   void syncNow('activation').catch(error => output.appendLine(`initial sync failed: ${String(error)}`));
 }
 
 export function deactivate(): void {
   if (syncTimer) clearTimeout(syncTimer);
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
 }
