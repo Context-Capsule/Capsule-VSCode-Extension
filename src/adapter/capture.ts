@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { VSCODE_SNAPSHOT_SCHEMA_VERSION, type EditorSelectionSnapshot, type TabSnapshot, type VsCodeSnapshot } from './types';
 
+const RESTORABLE_TEXT_SCHEMES = new Set(['file', 'vscode-remote']);
+
 function positionTuple(position: vscode.Position): [number, number] {
   return [position.line, position.character];
 }
@@ -27,7 +29,7 @@ function tabSnapshot(tab: vscode.Tab): TabSnapshot {
       dirty: tab.isDirty,
       pinned: tab.isPinned,
       preview: tab.isPreview,
-      restorable: true,
+      restorable: RESTORABLE_TEXT_SCHEMES.has(input.uri.scheme),
     };
   }
 
