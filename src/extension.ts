@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { captureVsCodeSnapshot } from './adapter/capture';
+import { captureVsCodeSnapshot, type CaptureMetadata } from './adapter/capture';
 import { restoreVsCodeSnapshot } from './adapter/restore';
 import { restoreIntegratedTerminals } from './adapter/terminal-restore';
 import { runtimeStatePath, writeRuntimeState } from './adapter/state';
@@ -11,9 +11,49 @@ const HEARTBEAT_MS = 30_000;
 let syncTimer: NodeJS.Timeout | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let output: vscode.OutputChannel;
+let captureMetadata: CaptureMetadata = {};
+
+function extensionModeName(mode: vscode.ExtensionMode): CaptureMetadata['extensionMode'] {
+  switch (mode) {
+    case vscode.ExtensionMode.Development:
+      return 'development';
+    case vscode.ExtensionMode.Test:
+      return 'test';
+    case vscode.ExtensionMode.Production:
+    default:
+      return 'production';
+  }
+}
+
+function metadataForContext(context: vscode.ExtensionContext): CaptureMetadata {
+  const metadata: CaptureMetadata = { extensionMode: extensionModeName(context.extensionMode) };
+  if (context.extensionMode === vscode.ExtensionMode.Development) {
+    metadata.extensionPath = context.extensionPath;
+  }
+  return metadata;
+}
+
+function normalizedPath(value: string): string {
+  const normalized = value.trim().replaceAll('/', '\\').replace(/\\+$/, '');
+  return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
+}
+
+function requestTargetsThisHost(request: RestoreRequest): boolean {
+  const saved = request.payload.editor;
+  if (!saved) return true;
+
+  if (saved.extensionMode && captureMetadata.extensionMode && saved.extensionMode !== captureMetadata.extensionMode) {
+    return false;
+  }
+  if (saved.extensionPath) {
+    if (!captureMetadata.extensionPath) return false;
+    if (normalizedPath(saved.extensionPath) !== normalizedPath(captureMetadata.extensionPath)) return false;
+  }
+  return true;
+}
 
 async function syncNow(reason: string): Promise<void> {
-  const snapshot = captureVsCodeSnapshot();
+  const snapshot = captureVsCodeSnapshot(captureMetadata);
   const destination = await writeRuntimeState(snapshot);
   output.appendLine(`[${new Date().toISOString()}] synchronized (${reason}) -> ${destination}`);
 }
@@ -24,6 +64,11 @@ function scheduleSync(reason: string): void {
 }
 
 async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
+  if (!requestTargetsThisHost(request)) {
+    output.appendLine(`restore ${request.request_id}: request targets another VS Code extension host; leaving it for that host`);
+    return;
+  }
+
   let changed = 0;
   let skipped = 0;
   const warnings: string[] = [];
@@ -62,7 +107,11 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   output = vscode.window.createOutputChannel('Context Capsule');
+  captureMetadata = metadataForContext(context);
   context.subscriptions.push(output);
+
+  output.appendLine(`extension mode: ${captureMetadata.extensionMode ?? 'unknown'}`);
+  if (captureMetadata.extensionPath) output.appendLine(`extension development path: ${captureMetadata.extensionPath}`);
 
   const register = (id: string, handler: (...args: unknown[]) => unknown) => {
     context.subscriptions.push(vscode.commands.registerCommand(id, handler));
@@ -74,7 +123,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   register('context-capsule.inspect', async () => {
-    const snapshot = captureVsCodeSnapshot();
+    const snapshot = captureVsCodeSnapshot(captureMetadata);
     const document = await vscode.workspace.openTextDocument({ language: 'json', content: JSON.stringify(snapshot, null, 2) });
     await vscode.window.showTextDocument(document, { preview: true });
   });
