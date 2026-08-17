@@ -1,0 +1,148 @@
+import { promises as fs, watch, type FSWatcher } from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import type { VsCodeSnapshot } from '../adapter/types';
+
+export interface TerminalRestoreSession {
+  host: string;
+  shell: string;
+  shell_executable?: string | null;
+  title?: string | null;
+  working_directory?: string | null;
+  profile?: string | null;
+}
+
+export interface RestoreRequest {
+  schema_version: 1;
+  request_id: string;
+  adapter: 'vscode';
+  created_at_unix_ms: number;
+  payload: {
+    editor?: VsCodeSnapshot | null;
+    terminals?: TerminalRestoreSession[];
+  };
+}
+
+export interface RestoreCompletion {
+  schema_version: 1;
+  request_id: string;
+  adapter: 'vscode';
+  completed_at_unix_ms: number;
+  ok: boolean;
+  changed: number;
+  skipped: number;
+  warnings: string[];
+  error?: string;
+}
+
+export function restoreRuntimeDir(): string {
+  const override = process.env.CONTEXT_CAPSULE_RESTORE_RUNTIME_DIR?.trim();
+  if (override) return override;
+
+  if (process.platform === 'win32') {
+    const base = process.env.LOCALAPPDATA;
+    if (!base) throw new Error('LOCALAPPDATA is unavailable');
+    return path.join(base, 'ContextCapsule', 'runtime', 'restore');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'ContextCapsule', 'runtime', 'restore');
+  }
+  return path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'context-capsule', 'restore');
+}
+
+function requestPath(): string {
+  return path.join(restoreRuntimeDir(), 'vscode-request.json');
+}
+
+function resultPath(): string {
+  return path.join(restoreRuntimeDir(), 'vscode-result.json');
+}
+
+async function readRequest(): Promise<RestoreRequest | undefined> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(requestPath(), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+  const request = JSON.parse(raw) as Partial<RestoreRequest>;
+  if (request.schema_version !== 1 || request.adapter !== 'vscode' || typeof request.request_id !== 'string') {
+    throw new Error('Invalid Context Capsule VS Code restore request envelope');
+  }
+  return request as RestoreRequest;
+}
+
+async function atomicWrite(filePath: string, value: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  await fs.writeFile(temporary, JSON.stringify(value), 'utf8');
+  await fs.rm(filePath, { force: true });
+  await fs.rename(temporary, filePath);
+}
+
+export async function completeRestore(
+  request: RestoreRequest,
+  result: { ok: boolean; changed: number; skipped: number; warnings: string[]; error?: string },
+): Promise<void> {
+  const completion: RestoreCompletion = {
+    schema_version: 1,
+    request_id: request.request_id,
+    adapter: 'vscode',
+    completed_at_unix_ms: Date.now(),
+    ok: result.ok,
+    changed: result.changed,
+    skipped: result.skipped,
+    warnings: result.warnings,
+  };
+  if (result.error) completion.error = result.error;
+  await atomicWrite(resultPath(), completion);
+
+  const current = await readRequest().catch(() => undefined);
+  if (current?.request_id === request.request_id) {
+    await fs.rm(requestPath(), { force: true });
+  }
+}
+
+export async function watchRestoreRequests(
+  handler: (request: RestoreRequest) => Promise<void>,
+): Promise<{ dispose(): void }> {
+  const directory = restoreRuntimeDir();
+  await fs.mkdir(directory, { recursive: true });
+  let watcher: FSWatcher | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  let handling = false;
+  let lastRequestId: string | undefined;
+
+  const inspect = async () => {
+    if (handling) return;
+    handling = true;
+    try {
+      const request = await readRequest();
+      if (request && request.request_id !== lastRequestId) {
+        lastRequestId = request.request_id;
+        await handler(request);
+      }
+    } finally {
+      handling = false;
+    }
+  };
+
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => void inspect().catch(() => undefined), 40);
+  };
+
+  watcher = watch(directory, (_event, filename) => {
+    if (!filename || filename.toString() === 'vscode-request.json') schedule();
+  });
+  await inspect();
+
+  return {
+    dispose() {
+      if (timer) clearTimeout(timer);
+      watcher?.close();
+      watcher = undefined;
+    },
+  };
+}
