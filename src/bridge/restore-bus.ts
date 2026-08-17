@@ -1,9 +1,10 @@
-import { promises as fs, watch, type FSWatcher } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { VsCodeSnapshot } from '../adapter/types';
 
 const MAX_REQUEST_AGE_MS = 60_000;
+const REQUEST_POLL_INTERVAL_MS = 100;
 
 export interface TerminalRestoreSession {
   host: string;
@@ -120,13 +121,13 @@ export async function watchRestoreRequests(
 ): Promise<{ dispose(): void }> {
   const directory = restoreRuntimeDir();
   await fs.mkdir(directory, { recursive: true });
-  let watcher: FSWatcher | undefined;
   let timer: NodeJS.Timeout | undefined;
   let handling = false;
+  let disposed = false;
   let lastRequestId: string | undefined;
 
-  const inspect = async () => {
-    if (handling) return;
+  const inspect = async (): Promise<void> => {
+    if (disposed || handling) return;
     handling = true;
     try {
       const request = await readRequest();
@@ -139,21 +140,16 @@ export async function watchRestoreRequests(
     }
   };
 
-  const schedule = () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => void inspect().catch(() => undefined), 40);
-  };
-
-  watcher = watch(directory, (_event, filename) => {
-    if (!filename || filename.toString() === 'vscode-request.json') schedule();
-  });
   await inspect();
+  timer = setInterval(() => {
+    void inspect().catch(() => undefined);
+  }, REQUEST_POLL_INTERVAL_MS);
 
   return {
     dispose() {
-      if (timer) clearTimeout(timer);
-      watcher?.close();
-      watcher = undefined;
+      disposed = true;
+      if (timer) clearInterval(timer);
+      timer = undefined;
     },
   };
 }
