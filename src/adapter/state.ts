@@ -1,6 +1,6 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import type { RuntimeEnvelope, VsCodeSnapshot } from './types';
 
 export function runtimeStatePath(environment = process.env): string {
@@ -26,6 +26,22 @@ export function runtimeStatePath(environment = process.env): string {
 export function runtimeHostStatePath(environment = process.env, pid = process.pid): string {
   const canonical = runtimeStatePath(environment);
   return path.join(path.dirname(canonical), `vscode-host-${pid}.json`);
+}
+
+export function runtimeHostLogPath(environment = process.env, pid = process.pid): string {
+  const canonical = runtimeStatePath(environment);
+  const runtimeDirectory = path.dirname(canonical);
+  const contextDirectory = path.basename(runtimeDirectory).toLocaleLowerCase('en-US') === 'runtime'
+    ? path.dirname(runtimeDirectory)
+    : runtimeDirectory;
+  return path.join(contextDirectory, 'logs', `vscode-host-${pid}.log`);
+}
+
+export async function appendRuntimeLog(message: string): Promise<string> {
+  const destination = runtimeHostLogPath();
+  await mkdir(path.dirname(destination), { recursive: true });
+  await appendFile(destination, `${message}\n`, 'utf8');
+  return destination;
 }
 
 async function writeEnvelope(destination: string, envelope: RuntimeEnvelope): Promise<void> {
