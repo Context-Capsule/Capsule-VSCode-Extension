@@ -1,18 +1,13 @@
 import * as vscode from 'vscode';
 import {
   VSCODE_SNAPSHOT_SCHEMA_VERSION,
+  type CaptureMetadata,
   type EditorSelectionSnapshot,
-  type ExtensionRuntimeMode,
   type TabSnapshot,
   type VsCodeSnapshot,
 } from './types';
 
 const RESTORABLE_TEXT_SCHEMES = new Set(['file', 'vscode-remote']);
-
-export interface CaptureMetadata {
-  extensionMode?: ExtensionRuntimeMode;
-  extensionPath?: string;
-}
 
 function positionTuple(position: vscode.Position): [number, number] {
   return [position.line, position.character];
@@ -78,11 +73,8 @@ export function captureVsCodeSnapshot(metadata: CaptureMetadata = {}): VsCodeSna
     activeEditorUri: vscode.window.activeTextEditor?.document.uri.toString(true),
   };
 
-  if (metadata.extensionMode) {
-    snapshot.extensionMode = metadata.extensionMode;
-  }
-  if (metadata.extensionPath) {
-    snapshot.extensionPath = metadata.extensionPath;
-  }
+  if (metadata.extensionMode) snapshot.extensionMode = metadata.extensionMode;
+  if (metadata.extensionPath) snapshot.extensionPath = metadata.extensionPath;
+  if (metadata.hostDetection) snapshot.hostDetection = metadata.hostDetection;
   return snapshot;
 }
