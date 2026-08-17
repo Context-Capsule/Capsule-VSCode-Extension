@@ -48,7 +48,9 @@ export function selectWorkspaceDevelopmentPath(
     .filter(extension => workspacePaths.some(workspace => pathsOverlap(workspace, extension.fsPath, platform)))
     .map(extension => extension.fsPath);
 
-  if (candidates.length === 0) return undefined;
+  if (candidates.length === 0) {
+    return undefined;
+  }
 
   // Prefer the candidate closest to a workspace root. This handles monorepos
   // deterministically while avoiding arbitrary extension enumeration order.
