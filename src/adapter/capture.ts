@@ -54,6 +54,7 @@ export function captureVsCodeSnapshot(metadata: CaptureMetadata = {}): VsCodeSna
   const snapshot: VsCodeSnapshot = {
     schemaVersion: VSCODE_SNAPSHOT_SCHEMA_VERSION,
     capturedAtUnixMs: Date.now(),
+    hostPid: process.pid,
     appName: vscode.env.appName,
     appHost: vscode.env.appHost,
     remoteName: vscode.env.remoteName,
