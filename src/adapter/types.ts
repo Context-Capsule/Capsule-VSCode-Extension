@@ -43,6 +43,16 @@ export interface TabGroupSnapshot {
   tabs: TabSnapshot[];
 }
 
+export interface IntegratedTerminalSnapshot {
+  name: string;
+  kind: 'process' | 'extension';
+  restorable: boolean;
+  shellPath?: string;
+  shellArgs?: string | string[];
+  cwd?: string;
+  cwdIsUri?: boolean;
+}
+
 export interface VsCodeSnapshot {
   schemaVersion: number;
   capturedAtUnixMs: number;
@@ -59,6 +69,7 @@ export interface VsCodeSnapshot {
   tabGroups: TabGroupSnapshot[];
   visibleEditorSelections: EditorSelectionSnapshot[];
   activeEditorUri?: string;
+  integratedTerminals?: IntegratedTerminalSnapshot[];
 }
 
 export interface RuntimeEnvelope {
