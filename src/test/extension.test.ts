@@ -39,16 +39,21 @@ suite('Context Capsule VS Code adapter', () => {
     }
   });
 
-  test('manual sync writes a producer-compatible runtime envelope', async () => {
+  test('manual sync writes development-host identity into the runtime envelope', async () => {
     const statePath = path.join(os.tmpdir(), `context-capsule-vscode-state-${randomUUID()}.json`);
     const previous = process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
     process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH = statePath;
     try {
       await vscode.commands.executeCommand('context-capsule.sync');
-      const envelope = JSON.parse(await readFile(statePath, 'utf8')) as { updatedAtUnixMs: number; snapshot: { schemaVersion: number } };
+      const envelope = JSON.parse(await readFile(statePath, 'utf8')) as {
+        updatedAtUnixMs: number;
+        snapshot: { schemaVersion: number; extensionMode?: string; extensionPath?: string };
+      };
       assert.equal(envelope.snapshot.schemaVersion, 1);
       assert.ok(envelope.updatedAtUnixMs > 0);
       assert.equal(runtimeStatePath(), statePath);
+      assert.equal(envelope.snapshot.extensionMode, 'development');
+      assert.ok(envelope.snapshot.extensionPath, 'Extension Development Host must persist its development extension path');
     } finally {
       if (previous === undefined) delete process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
       else process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH = previous;
