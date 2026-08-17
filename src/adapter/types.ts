@@ -1,6 +1,13 @@
 export const VSCODE_SNAPSHOT_SCHEMA_VERSION = 1;
 
 export type ExtensionRuntimeMode = 'development' | 'production' | 'test';
+export type HostDetection = 'self-development' | 'workspace-development-extension' | 'production' | 'test';
+
+export interface CaptureMetadata {
+  extensionMode?: ExtensionRuntimeMode;
+  extensionPath?: string;
+  hostDetection?: HostDetection;
+}
 
 export interface WorkspaceFolderSnapshot {
   uri: string;
@@ -39,11 +46,13 @@ export interface TabGroupSnapshot {
 export interface VsCodeSnapshot {
   schemaVersion: number;
   capturedAtUnixMs: number;
+  hostPid?: number;
   appName: string;
   appHost: string;
   remoteName?: string;
   extensionMode?: ExtensionRuntimeMode;
   extensionPath?: string;
+  hostDetection?: HostDetection;
   workspaceTrusted: boolean;
   workspaceFile?: string;
   workspaceFolders: WorkspaceFolderSnapshot[];

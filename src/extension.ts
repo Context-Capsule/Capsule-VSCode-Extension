@@ -1,8 +1,16 @@
 import * as vscode from 'vscode';
-import { captureVsCodeSnapshot, type CaptureMetadata } from './adapter/capture';
+import { captureVsCodeSnapshot } from './adapter/capture';
+import { captureMetadataForContext } from './adapter/host-identity';
 import { restoreVsCodeSnapshot } from './adapter/restore';
 import { restoreIntegratedTerminals } from './adapter/terminal-restore';
-import { runtimeStatePath, writeRuntimeState } from './adapter/state';
+import {
+  appendRuntimeLog,
+  runtimeHostLogPath,
+  runtimeHostStatePath,
+  runtimeStatePath,
+  writeRuntimeState,
+} from './adapter/state';
+import type { CaptureMetadata } from './adapter/types';
 import { checkCliConnection, fetchCapsuleSnapshot } from './bridge/cli';
 import { snapshotTargetsHost } from './bridge/host-target';
 import { completeRestore, watchRestoreRequests, type RestoreRequest } from './bridge/restore-bus';
@@ -14,42 +22,38 @@ let heartbeatTimer: NodeJS.Timeout | undefined;
 let output: vscode.OutputChannel;
 let captureMetadata: CaptureMetadata = {};
 
-function extensionModeName(mode: vscode.ExtensionMode): CaptureMetadata['extensionMode'] {
-  switch (mode) {
-    case vscode.ExtensionMode.Development:
-      return 'development';
-    case vscode.ExtensionMode.Test:
-      return 'test';
-    case vscode.ExtensionMode.Production:
-    default:
-      return 'production';
+function log(message: string, persist = true): void {
+  const line = `[${new Date().toISOString()}] ${message}`;
+  output.appendLine(line);
+  if (persist) {
+    void appendRuntimeLog(line).catch(error => {
+      output.appendLine(`[${new Date().toISOString()}] diagnostic log write failed: ${String(error)}`);
+    });
   }
-}
-
-function metadataForContext(context: vscode.ExtensionContext): CaptureMetadata {
-  const metadata: CaptureMetadata = { extensionMode: extensionModeName(context.extensionMode) };
-  if (context.extensionMode === vscode.ExtensionMode.Development) {
-    metadata.extensionPath = context.extensionPath;
-  }
-  return metadata;
 }
 
 async function syncNow(reason: string): Promise<void> {
   const snapshot = captureVsCodeSnapshot(captureMetadata);
   const destination = await writeRuntimeState(snapshot);
-  output.appendLine(`[${new Date().toISOString()}] synchronized (${reason}) -> ${destination}`);
+  const tabCount = snapshot.tabGroups.reduce((count, group) => count + group.tabs.length, 0);
+  log(
+    `synchronized (${reason}); host=${snapshot.extensionMode ?? 'unknown'} detection=${snapshot.hostDetection ?? 'unknown'} tabs=${tabCount} -> ${destination}`,
+    reason !== 'heartbeat',
+  );
 }
 
 function scheduleSync(reason: string): void {
   if (syncTimer) {
     clearTimeout(syncTimer);
   }
-  syncTimer = setTimeout(() => void syncNow(reason).catch(error => output.appendLine(`sync failed: ${String(error)}`)), SYNC_DEBOUNCE_MS);
+  syncTimer = setTimeout(() => void syncNow(reason).catch(error => log(`sync failed (${reason}): ${String(error)}`)), SYNC_DEBOUNCE_MS);
 }
 
 async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
   if (!snapshotTargetsHost(request.payload.editor, captureMetadata)) {
-    output.appendLine(`restore ${request.request_id}: request targets another VS Code extension host; leaving it for that host`);
+    log(
+      `restore ${request.request_id}: request targets another VS Code host; current mode=${captureMetadata.extensionMode ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
+    );
     return;
   }
 
@@ -58,6 +62,7 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
   const warnings: string[] = [];
 
   try {
+    log(`restore ${request.request_id}: accepted by this host`);
     if (request.payload.editor) {
       if (!vscode.workspace.isTrusted) {
         throw new Error('VS Code semantic restore is disabled while this workspace is untrusted.');
@@ -75,29 +80,31 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
 
     await syncNow(`restore ${request.request_id}`);
     await completeRestore(request, { ok: true, changed, skipped, warnings });
-    output.appendLine(`restore ${request.request_id}: changed ${changed}, skipped ${skipped}`);
+    log(`restore ${request.request_id}: changed ${changed}, skipped ${skipped}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    output.appendLine(`restore ${request.request_id} failed: ${message}`);
+    log(`restore ${request.request_id} failed: ${message}`);
     await completeRestore(request, {
       ok: false,
       changed,
       skipped,
       warnings,
       error: message,
-    }).catch(completionError => output.appendLine(`restore completion write failed: ${String(completionError)}`));
+    }).catch(completionError => log(`restore completion write failed: ${String(completionError)}`));
   }
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   output = vscode.window.createOutputChannel('Context Capsule');
-  captureMetadata = metadataForContext(context);
+  captureMetadata = captureMetadataForContext(context);
   context.subscriptions.push(output);
 
-  output.appendLine(`extension mode: ${captureMetadata.extensionMode ?? 'unknown'}`);
-  if (captureMetadata.extensionPath) {
-    output.appendLine(`extension development path: ${captureMetadata.extensionPath}`);
-  }
+  log(`extension host PID: ${process.pid}`);
+  log(
+    `host identity: mode=${captureMetadata.extensionMode ?? 'unknown'} detection=${captureMetadata.hostDetection ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
+  );
+  log(`host runtime state: ${runtimeHostStatePath()}`);
+  log(`host diagnostic log: ${runtimeHostLogPath()}`);
 
   const register = (id: string, handler: (...args: unknown[]) => unknown) => {
     context.subscriptions.push(vscode.commands.registerCommand(id, handler));
@@ -117,14 +124,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   register('context-capsule.diagnostics', async () => {
     try {
       const result = await checkCliConnection();
-      output.appendLine(`CLI: ${result.cliPath}`);
-      output.appendLine(result.output);
-      output.appendLine(`Runtime state: ${runtimeStatePath()}`);
+      log(`CLI: ${result.cliPath}`);
+      log(result.output);
+      log(`Canonical runtime state: ${runtimeStatePath()}`);
+      log(`This host runtime state: ${runtimeHostStatePath()}`);
+      log(`This host diagnostic log: ${runtimeHostLogPath()}`);
+      log(
+        `This host identity: mode=${captureMetadata.extensionMode ?? 'unknown'} detection=${captureMetadata.hostDetection ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
+      );
       output.show(true);
       vscode.window.showInformationMessage('Context Capsule CLI connection is healthy.');
     } catch (error) {
-      output.appendLine(`Diagnostics failed: ${String(error)}`);
-      output.appendLine(`Runtime state: ${runtimeStatePath()}`);
+      log(`Diagnostics failed: ${String(error)}`);
+      log(`Canonical runtime state: ${runtimeStatePath()}`);
+      log(`This host diagnostic log: ${runtimeHostLogPath()}`);
       output.show(true);
       vscode.window.showErrorMessage(`Context Capsule CLI unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -143,9 +156,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const snapshot = await fetchCapsuleSnapshot(name.trim());
       const report = await restoreVsCodeSnapshot(snapshot);
       const suffix = report.warnings.length ? ` ${report.warnings.length} warning(s); see Context Capsule output.` : '';
-      report.warnings.forEach(warning => output.appendLine(`restore warning: ${warning}`));
+      report.warnings.forEach(warning => log(`restore warning: ${warning}`));
       vscode.window.showInformationMessage(`Context Capsule restored ${report.opened} VS Code tab(s); skipped ${report.skipped}.${suffix}`);
     } catch (error) {
+      log(`manual restore failed: ${String(error)}`);
       vscode.window.showErrorMessage(`Could not restore capsule: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
@@ -164,13 +178,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   try {
     const restoreWatcher = await watchRestoreRequests(handleRestoreRequest);
     context.subscriptions.push(restoreWatcher);
-    output.appendLine('CLI restore request watcher active.');
+    log('CLI restore request watcher active.');
   } catch (error) {
-    output.appendLine(`Could not start CLI restore request watcher: ${String(error)}`);
+    log(`Could not start CLI restore request watcher: ${String(error)}`);
   }
 
   heartbeatTimer = setInterval(
-    () => void syncNow('heartbeat').catch(error => output.appendLine(`heartbeat failed: ${String(error)}`)),
+    () => void syncNow('heartbeat').catch(error => log(`heartbeat failed: ${String(error)}`)),
     HEARTBEAT_MS,
   );
   context.subscriptions.push({
@@ -182,7 +196,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
-  void syncNow('activation').catch(error => output.appendLine(`initial sync failed: ${String(error)}`));
+  void syncNow('activation').catch(error => log(`initial sync failed: ${String(error)}`));
 }
 
 export function deactivate(): void {
