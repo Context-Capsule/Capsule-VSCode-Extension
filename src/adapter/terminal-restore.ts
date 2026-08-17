@@ -15,7 +15,9 @@ export async function restoreIntegratedTerminals(
   sessions: TerminalRestoreSession[],
 ): Promise<TerminalRestoreReport> {
   const report: TerminalRestoreReport = { opened: 0, skipped: 0, warnings: [] };
-  if (sessions.length === 0) return report;
+  if (sessions.length === 0) {
+    return report;
+  }
 
   if (!vscode.workspace.isTrusted) {
     report.skipped = sessions.length;
@@ -34,9 +36,15 @@ export async function restoreIntegratedTerminals(
     try {
       const options: vscode.TerminalOptions = {};
       const name = terminalName(session);
-      if (name) options.name = name;
-      if (session.shell_executable?.trim()) options.shellPath = session.shell_executable;
-      if (session.working_directory?.trim()) options.cwd = session.working_directory;
+      if (name) {
+        options.name = name;
+      }
+      if (session.shell_executable?.trim()) {
+        options.shellPath = session.shell_executable;
+      }
+      if (session.working_directory?.trim()) {
+        options.cwd = session.working_directory;
+      }
       vscode.window.createTerminal(options);
       report.opened += 1;
     } catch (error) {

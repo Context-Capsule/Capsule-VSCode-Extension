@@ -15,13 +15,17 @@ export function snapshotTargetsHost(
   current: ExtensionHostIdentity,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  if (!saved) return true;
+  if (!saved) {
+    return true;
+  }
 
   if (saved.extensionMode && current.extensionMode && saved.extensionMode !== current.extensionMode) {
     return false;
   }
   if (saved.extensionPath) {
-    if (!current.extensionPath) return false;
+    if (!current.extensionPath) {
+      return false;
+    }
     if (normalizedPath(saved.extensionPath, platform) !== normalizedPath(current.extensionPath, platform)) {
       return false;
     }

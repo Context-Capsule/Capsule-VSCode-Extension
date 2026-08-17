@@ -25,8 +25,12 @@ export async function fetchCapsuleSnapshot(name: string): Promise<VsCodeSnapshot
   const output = await runCli(['show', name, '--json']);
   const stored = JSON.parse(output) as { snapshot?: { editors?: { vscode?: VsCodeSnapshot | null } } };
   const snapshot = stored.snapshot?.editors?.vscode;
-  if (!snapshot) throw new Error(`Capsule '${name}' has no recent VS Code snapshot.`);
-  if (snapshot.schemaVersion !== 1) throw new Error(`Unsupported VS Code snapshot schema ${snapshot.schemaVersion}.`);
+  if (!snapshot) {
+    throw new Error(`Capsule '${name}' has no recent VS Code snapshot.`);
+  }
+  if (snapshot.schemaVersion !== 1) {
+    throw new Error(`Unsupported VS Code snapshot schema ${snapshot.schemaVersion}.`);
+  }
   return snapshot;
 }
 

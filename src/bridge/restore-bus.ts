@@ -40,11 +40,15 @@ export interface RestoreCompletion {
 
 export function restoreRuntimeDir(): string {
   const override = process.env.CONTEXT_CAPSULE_RESTORE_RUNTIME_DIR?.trim();
-  if (override) return override;
+  if (override) {
+    return override;
+  }
 
   if (process.platform === 'win32') {
     const base = process.env.LOCALAPPDATA;
-    if (!base) throw new Error('LOCALAPPDATA is unavailable');
+    if (!base) {
+      throw new Error('LOCALAPPDATA is unavailable');
+    }
     return path.join(base, 'ContextCapsule', 'runtime', 'restore');
   }
   if (process.platform === 'darwin') {
@@ -66,7 +70,9 @@ async function readRequest(): Promise<RestoreRequest | undefined> {
   try {
     raw = await fs.readFile(requestPath(), 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
     throw error;
   }
   const request = JSON.parse(raw) as Partial<RestoreRequest>;
@@ -107,7 +113,9 @@ export async function completeRestore(
     skipped: result.skipped,
     warnings: result.warnings,
   };
-  if (result.error) completion.error = result.error;
+  if (result.error) {
+    completion.error = result.error;
+  }
   await atomicWrite(resultPath(), completion);
 
   const current = await readRequest().catch(() => undefined);
@@ -127,7 +135,9 @@ export async function watchRestoreRequests(
   let lastRequestId: string | undefined;
 
   const inspect = async (): Promise<void> => {
-    if (disposed || handling) return;
+    if (disposed || handling) {
+      return;
+    }
     handling = true;
     try {
       const request = await readRequest();
@@ -148,7 +158,9 @@ export async function watchRestoreRequests(
   return {
     dispose() {
       disposed = true;
-      if (timer) clearInterval(timer);
+      if (timer) {
+        clearInterval(timer);
+      }
       timer = undefined;
     },
   };

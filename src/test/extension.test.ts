@@ -61,8 +61,11 @@ suite('Context Capsule VS Code adapter', () => {
       assert.equal(runtimeStatePath(), statePath);
       assert.match(hostStatePath, /vscode-host-\d+\.json$/i);
     } finally {
-      if (previous === undefined) delete process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
-      else process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH = previous;
+      if (previous === undefined) {
+        delete process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
+      } else {
+        process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH = previous;
+      }
       await Promise.all([
         rm(statePath, { force: true }),
         rm(hostStatePath, { force: true }),

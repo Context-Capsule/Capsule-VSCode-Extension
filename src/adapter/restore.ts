@@ -24,7 +24,9 @@ function existingTabsByColumn(): Map<number | undefined, Set<string>> {
     const uris = new Set<string>();
     for (const tab of group.tabs) {
       const uri = tabTextUri(tab);
-      if (uri) uris.add(uri);
+      if (uri) {
+        uris.add(uri);
+      }
     }
     result.set(group.viewColumn, uris);
   }
@@ -33,7 +35,9 @@ function existingTabsByColumn(): Map<number | undefined, Set<string>> {
 
 function applySavedSelection(editor: vscode.TextEditor, snapshot: VsCodeSnapshot, uri: string): void {
   const saved = snapshot.visibleEditorSelections.find(item => item.uri === uri);
-  if (!saved?.selections.length) return;
+  if (!saved?.selections.length) {
+    return;
+  }
   editor.selections = saved.selections.map(selectionFromSnapshot);
   editor.revealRange(new vscode.Range(editor.selection.active, editor.selection.active));
 }

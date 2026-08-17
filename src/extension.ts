@@ -41,7 +41,9 @@ async function syncNow(reason: string): Promise<void> {
 }
 
 function scheduleSync(reason: string): void {
-  if (syncTimer) clearTimeout(syncTimer);
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+  }
   syncTimer = setTimeout(() => void syncNow(reason).catch(error => output.appendLine(`sync failed: ${String(error)}`)), SYNC_DEBOUNCE_MS);
 }
 
@@ -93,7 +95,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(output);
 
   output.appendLine(`extension mode: ${captureMetadata.extensionMode ?? 'unknown'}`);
-  if (captureMetadata.extensionPath) output.appendLine(`extension development path: ${captureMetadata.extensionPath}`);
+  if (captureMetadata.extensionPath) {
+    output.appendLine(`extension development path: ${captureMetadata.extensionPath}`);
+  }
 
   const register = (id: string, handler: (...args: unknown[]) => unknown) => {
     context.subscriptions.push(vscode.commands.registerCommand(id, handler));
@@ -132,7 +136,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
     const name = await vscode.window.showInputBox({ prompt: 'Capsule name to restore', placeHolder: 'my-workspace', ignoreFocusOut: true });
-    if (!name?.trim()) return;
+    if (!name?.trim()) {
+      return;
+    }
     try {
       const snapshot = await fetchCapsuleSnapshot(name.trim());
       const report = await restoreVsCodeSnapshot(snapshot);
@@ -169,7 +175,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push({
     dispose: () => {
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+      }
       heartbeatTimer = undefined;
     },
   });
@@ -178,6 +186,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 export function deactivate(): void {
-  if (syncTimer) clearTimeout(syncTimer);
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+  }
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+  }
 }

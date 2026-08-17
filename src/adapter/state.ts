@@ -5,11 +5,15 @@ import type { RuntimeEnvelope, VsCodeSnapshot } from './types';
 
 export function runtimeStatePath(environment = process.env): string {
   const override = environment.CONTEXT_CAPSULE_VSCODE_STATE_PATH?.trim();
-  if (override) return override;
+  if (override) {
+    return override;
+  }
 
   if (process.platform === 'win32') {
     const base = environment.LOCALAPPDATA;
-    if (!base) throw new Error('LOCALAPPDATA is unavailable; set CONTEXT_CAPSULE_VSCODE_STATE_PATH.');
+    if (!base) {
+      throw new Error('LOCALAPPDATA is unavailable; set CONTEXT_CAPSULE_VSCODE_STATE_PATH.');
+    }
     return path.join(base, 'ContextCapsule', 'runtime', 'vscode.json');
   }
   if (process.platform === 'darwin') {
@@ -31,7 +35,9 @@ async function writeEnvelope(destination: string, envelope: RuntimeEnvelope): Pr
   await writeFile(temporary, serialized, 'utf8');
   await rename(temporary, destination).catch(async error => {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code !== 'EEXIST' && code !== 'EPERM') throw error;
+    if (code !== 'EEXIST' && code !== 'EPERM') {
+      throw error;
+    }
     await writeFile(destination, serialized, 'utf8');
   });
 }
