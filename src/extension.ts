@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import { captureVsCodeSnapshot } from './adapter/capture';
 import { restoreVsCodeSnapshot } from './adapter/restore';
+import { restoreIntegratedTerminals } from './adapter/terminal-restore';
 import { runtimeStatePath, writeRuntimeState } from './adapter/state';
 import { checkCliConnection, fetchCapsuleSnapshot } from './bridge/cli';
+import { completeRestore, watchRestoreRequests, type RestoreRequest } from './bridge/restore-bus';
 
 const SYNC_DEBOUNCE_MS = 350;
 const HEARTBEAT_MS = 30_000;
@@ -21,7 +23,44 @@ function scheduleSync(reason: string): void {
   syncTimer = setTimeout(() => void syncNow(reason).catch(error => output.appendLine(`sync failed: ${String(error)}`)), SYNC_DEBOUNCE_MS);
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
+  let changed = 0;
+  let skipped = 0;
+  const warnings: string[] = [];
+
+  try {
+    if (request.payload.editor) {
+      if (!vscode.workspace.isTrusted) {
+        throw new Error('VS Code semantic restore is disabled while this workspace is untrusted.');
+      }
+      const editorReport = await restoreVsCodeSnapshot(request.payload.editor);
+      changed += editorReport.opened;
+      skipped += editorReport.skipped;
+      warnings.push(...editorReport.warnings);
+    }
+
+    const terminalReport = await restoreIntegratedTerminals(request.payload.terminals ?? []);
+    changed += terminalReport.opened;
+    skipped += terminalReport.skipped;
+    warnings.push(...terminalReport.warnings);
+
+    await syncNow(`restore ${request.request_id}`);
+    await completeRestore(request, { ok: true, changed, skipped, warnings });
+    output.appendLine(`restore ${request.request_id}: changed ${changed}, skipped ${skipped}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`restore ${request.request_id} failed: ${message}`);
+    await completeRestore(request, {
+      ok: false,
+      changed,
+      skipped,
+      warnings,
+      error: message,
+    }).catch(completionError => output.appendLine(`restore completion write failed: ${String(completionError)}`));
+  }
+}
+
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   output = vscode.window.createOutputChannel('Context Capsule');
   context.subscriptions.push(output);
 
@@ -84,6 +123,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeWorkspaceFolders(() => scheduleSync('workspace folders changed')),
   ];
   context.subscriptions.push(...subscriptions);
+
+  try {
+    const restoreWatcher = await watchRestoreRequests(handleRestoreRequest);
+    context.subscriptions.push(restoreWatcher);
+    output.appendLine('CLI restore request watcher active.');
+  } catch (error) {
+    output.appendLine(`Could not start CLI restore request watcher: ${String(error)}`);
+  }
 
   heartbeatTimer = setInterval(
     () => void syncNow('heartbeat').catch(error => output.appendLine(`heartbeat failed: ${String(error)}`)),

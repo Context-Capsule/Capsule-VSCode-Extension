@@ -14,16 +14,46 @@ export interface RestoreReport {
   warnings: string[];
 }
 
+function tabTextUri(tab: vscode.Tab): string | undefined {
+  return tab.input instanceof vscode.TabInputText ? tab.input.uri.toString(true) : undefined;
+}
+
+function existingTabsByColumn(): Map<number | undefined, Set<string>> {
+  const result = new Map<number | undefined, Set<string>>();
+  for (const group of vscode.window.tabGroups.all) {
+    const uris = new Set<string>();
+    for (const tab of group.tabs) {
+      const uri = tabTextUri(tab);
+      if (uri) uris.add(uri);
+    }
+    result.set(group.viewColumn, uris);
+  }
+  return result;
+}
+
+function applySavedSelection(editor: vscode.TextEditor, snapshot: VsCodeSnapshot, uri: string): void {
+  const saved = snapshot.visibleEditorSelections.find(item => item.uri === uri);
+  if (!saved?.selections.length) return;
+  editor.selections = saved.selections.map(selectionFromSnapshot);
+  editor.revealRange(new vscode.Range(editor.selection.active, editor.selection.active));
+}
+
 export async function restoreVsCodeSnapshot(snapshot: VsCodeSnapshot): Promise<RestoreReport> {
   const report: RestoreReport = { opened: 0, skipped: 0, warnings: [] };
-  const selectionByUri = new Map(snapshot.visibleEditorSelections.map(item => [item.uri, item]));
+  const existing = existingTabsByColumn();
 
   for (const group of snapshot.tabGroups) {
+    const existingInGroup = existing.get(group.viewColumn) ?? new Set<string>();
     for (const tab of group.tabs) {
       if (!tab.restorable || !tab.uri) {
         report.skipped += 1;
         continue;
       }
+      if (existingInGroup.has(tab.uri)) {
+        report.skipped += 1;
+        continue;
+      }
+
       try {
         const uri = vscode.Uri.parse(tab.uri, true);
         const document = await vscode.workspace.openTextDocument(uri);
@@ -32,14 +62,12 @@ export async function restoreVsCodeSnapshot(snapshot: VsCodeSnapshot): Promise<R
           preview: tab.preview,
           preserveFocus: !tab.active,
         });
-        const savedSelection = selectionByUri.get(tab.uri);
-        if (savedSelection?.selections.length) {
-          editor.selections = savedSelection.selections.map(selectionFromSnapshot);
-          editor.revealRange(new vscode.Range(editor.selection.active, editor.selection.active));
-        }
+        applySavedSelection(editor, snapshot, tab.uri);
         if (tab.pinned) {
           await vscode.commands.executeCommand('workbench.action.keepEditor');
         }
+        existingInGroup.add(tab.uri);
+        existing.set(group.viewColumn, existingInGroup);
         report.opened += 1;
       } catch (error) {
         report.skipped += 1;
@@ -54,8 +82,15 @@ export async function restoreVsCodeSnapshot(snapshot: VsCodeSnapshot): Promise<R
     if (active?.tab.uri) {
       try {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(active.tab.uri, true));
-        await vscode.window.showTextDocument(document, { viewColumn: active.group.viewColumn, preview: false, preserveFocus: false });
-      } catch { /* already reported during the main pass when applicable */ }
+        const editor = await vscode.window.showTextDocument(document, {
+          viewColumn: active.group.viewColumn,
+          preview: false,
+          preserveFocus: false,
+        });
+        applySavedSelection(editor, snapshot, active.tab.uri);
+      } catch {
+        // Already reported during the main pass when applicable.
+      }
     }
   }
 
