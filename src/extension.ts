@@ -4,6 +4,7 @@ import { restoreVsCodeSnapshot } from './adapter/restore';
 import { restoreIntegratedTerminals } from './adapter/terminal-restore';
 import { runtimeStatePath, writeRuntimeState } from './adapter/state';
 import { checkCliConnection, fetchCapsuleSnapshot } from './bridge/cli';
+import { snapshotTargetsHost } from './bridge/host-target';
 import { completeRestore, watchRestoreRequests, type RestoreRequest } from './bridge/restore-bus';
 
 const SYNC_DEBOUNCE_MS = 350;
@@ -33,25 +34,6 @@ function metadataForContext(context: vscode.ExtensionContext): CaptureMetadata {
   return metadata;
 }
 
-function normalizedPath(value: string): string {
-  const normalized = value.trim().replaceAll('/', '\\').replace(/\\+$/, '');
-  return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
-}
-
-function requestTargetsThisHost(request: RestoreRequest): boolean {
-  const saved = request.payload.editor;
-  if (!saved) return true;
-
-  if (saved.extensionMode && captureMetadata.extensionMode && saved.extensionMode !== captureMetadata.extensionMode) {
-    return false;
-  }
-  if (saved.extensionPath) {
-    if (!captureMetadata.extensionPath) return false;
-    if (normalizedPath(saved.extensionPath) !== normalizedPath(captureMetadata.extensionPath)) return false;
-  }
-  return true;
-}
-
 async function syncNow(reason: string): Promise<void> {
   const snapshot = captureVsCodeSnapshot(captureMetadata);
   const destination = await writeRuntimeState(snapshot);
@@ -64,7 +46,7 @@ function scheduleSync(reason: string): void {
 }
 
 async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
-  if (!requestTargetsThisHost(request)) {
+  if (!snapshotTargetsHost(request.payload.editor, captureMetadata)) {
     output.appendLine(`restore ${request.request_id}: request targets another VS Code extension host; leaving it for that host`);
     return;
   }
