@@ -4,9 +4,10 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { captureVsCodeSnapshot } from '../adapter/capture';
+import { captureIntegratedTerminal, captureVsCodeSnapshot } from '../adapter/capture';
 import { selectWorkspaceDevelopmentPath } from '../adapter/host-identity';
 import { runtimeHostLogPath, runtimeHostStatePath, runtimeStatePath } from '../adapter/state';
+import { restoreIntegratedTerminals } from '../adapter/terminal-restore';
 
 suite('Context Capsule VS Code adapter', () => {
   test('captures a durable text editor and its selection as restorable', async () => {
@@ -39,6 +40,47 @@ suite('Context Capsule VS Code adapter', () => {
     } finally {
       await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
     }
+  });
+
+  test('captures integrated terminal launch context and treats the live terminal as already satisfied', async () => {
+    const name = `Context Capsule terminal ${randomUUID()}`;
+    const cwd = os.tmpdir();
+    const terminal = vscode.window.createTerminal({ name, cwd });
+    try {
+      const captured = captureIntegratedTerminal(terminal);
+      assert.equal(captured.kind, 'process');
+      assert.equal(captured.restorable, true);
+      assert.equal(captured.name, name);
+      assert.equal(captured.cwd, cwd);
+      assert.equal(captured.cwdIsUri, false);
+
+      const snapshot = captureVsCodeSnapshot();
+      assert.ok(snapshot.integratedTerminals?.some(item => item.name === name && item.cwd === cwd));
+
+      const before = vscode.window.terminals.length;
+      const report = await restoreIntegratedTerminals([captured]);
+      assert.equal(report.opened, 0);
+      assert.equal(report.skipped, 1);
+      assert.equal(vscode.window.terminals.length, before);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test('restores a missing integrated terminal without replaying command history', async () => {
+    const name = `Context Capsule restored terminal ${randomUUID()}`;
+    const before = new Set(vscode.window.terminals);
+    const report = await restoreIntegratedTerminals([{
+      name,
+      kind: 'process',
+      restorable: true,
+      cwd: os.tmpdir(),
+      cwdIsUri: false,
+    }]);
+    assert.equal(report.opened, 1);
+    const created = vscode.window.terminals.find(terminal => !before.has(terminal) && terminal.name === name);
+    assert.ok(created, 'missing semantic terminal should be created in this VS Code host');
+    created.dispose();
   });
 
   test('detects an extension development path loaded from the current workspace', () => {
@@ -96,6 +138,7 @@ suite('Context Capsule VS Code adapter', () => {
           extensionMode?: string;
           extensionPath?: string;
           hostDetection?: string;
+          integratedTerminals?: unknown[];
         };
       };
       const hostEnvelope = JSON.parse(await readFile(hostStatePath, 'utf8')) as typeof canonicalEnvelope;
@@ -107,6 +150,7 @@ suite('Context Capsule VS Code adapter', () => {
         assert.equal(envelope.snapshot.extensionMode, 'test');
         assert.equal(envelope.snapshot.hostDetection, 'test');
         assert.equal(envelope.snapshot.extensionPath, undefined);
+        assert.ok(Array.isArray(envelope.snapshot.integratedTerminals));
       }
       assert.equal(runtimeStatePath(), statePath);
       assert.match(hostStatePath, /vscode-host-\d+\.json$/i);
