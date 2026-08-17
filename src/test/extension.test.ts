@@ -5,7 +5,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { captureVsCodeSnapshot } from '../adapter/capture';
-import { runtimeHostStatePath, runtimeStatePath } from '../adapter/state';
+import { selectWorkspaceDevelopmentPath } from '../adapter/host-identity';
+import { runtimeHostLogPath, runtimeHostStatePath, runtimeStatePath } from '../adapter/state';
 
 suite('Context Capsule VS Code adapter', () => {
   test('captures a durable text editor and its selection as restorable', async () => {
@@ -39,6 +40,46 @@ suite('Context Capsule VS Code adapter', () => {
     }
   });
 
+  test('detects an extension development path loaded from the current workspace', () => {
+    const selected = selectWorkspaceDevelopmentPath(
+      ['C:\\work\\tri-up'],
+      [
+        { id: 'context-capsule.context-capsule', scheme: 'file', fsPath: 'C:\\Users\\dev\\.vscode\\extensions\\context-capsule' },
+        { id: 'example.tri-up', scheme: 'file', fsPath: 'C:\\work\\tri-up' },
+        { id: 'vscode.git', scheme: 'file', fsPath: 'C:\\Program Files\\Microsoft VS Code\\resources\\app\\extensions\\git' },
+      ],
+      'context-capsule.context-capsule',
+      'win32',
+    );
+    assert.equal(selected, 'C:\\work\\tri-up');
+  });
+
+  test('detects a development extension nested inside a monorepo workspace', () => {
+    const selected = selectWorkspaceDevelopmentPath(
+      ['/work/repo'],
+      [
+        { id: 'example.extension', scheme: 'file', fsPath: '/work/repo/packages/extension' },
+        { id: 'other.installed', scheme: 'file', fsPath: '/home/dev/.vscode/extensions/other.installed' },
+      ],
+      'context-capsule.context-capsule',
+      'linux',
+    );
+    assert.equal(selected, '/work/repo/packages/extension');
+  });
+
+  test('does not classify a normal workspace as a development host', () => {
+    const selected = selectWorkspaceDevelopmentPath(
+      ['C:\\work\\ordinary-project'],
+      [
+        { id: 'context-capsule.context-capsule', scheme: 'file', fsPath: 'C:\\Users\\dev\\.vscode\\extensions\\context-capsule' },
+        { id: 'publisher.tool', scheme: 'file', fsPath: 'C:\\Users\\dev\\.vscode\\extensions\\publisher.tool' },
+      ],
+      'context-capsule.context-capsule',
+      'win32',
+    );
+    assert.equal(selected, undefined);
+  });
+
   test('manual sync writes development-host identity into canonical and per-host runtime envelopes', async () => {
     const statePath = path.join(os.tmpdir(), `context-capsule-vscode-state-${randomUUID()}.json`);
     const previous = process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
@@ -48,7 +89,7 @@ suite('Context Capsule VS Code adapter', () => {
       await vscode.commands.executeCommand('context-capsule.sync');
       const canonicalEnvelope = JSON.parse(await readFile(statePath, 'utf8')) as {
         updatedAtUnixMs: number;
-        snapshot: { schemaVersion: number; extensionMode?: string; extensionPath?: string };
+        snapshot: { schemaVersion: number; extensionMode?: string; extensionPath?: string; hostDetection?: string };
       };
       const hostEnvelope = JSON.parse(await readFile(hostStatePath, 'utf8')) as typeof canonicalEnvelope;
 
@@ -57,9 +98,11 @@ suite('Context Capsule VS Code adapter', () => {
         assert.ok(envelope.updatedAtUnixMs > 0);
         assert.equal(envelope.snapshot.extensionMode, 'development');
         assert.ok(envelope.snapshot.extensionPath, 'Extension Development Host must persist its development extension path');
+        assert.ok(envelope.snapshot.hostDetection, 'host detection reason should be persisted for diagnostics');
       }
       assert.equal(runtimeStatePath(), statePath);
       assert.match(hostStatePath, /vscode-host-\d+\.json$/i);
+      assert.match(runtimeHostLogPath(), /vscode-host-\d+\.log$/i);
     } finally {
       if (previous === undefined) {
         delete process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
