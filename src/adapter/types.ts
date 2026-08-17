@@ -1,5 +1,7 @@
 export const VSCODE_SNAPSHOT_SCHEMA_VERSION = 1;
 
+export type ExtensionRuntimeMode = 'development' | 'production' | 'test';
+
 export interface WorkspaceFolderSnapshot {
   uri: string;
   name: string;
@@ -40,6 +42,8 @@ export interface VsCodeSnapshot {
   appName: string;
   appHost: string;
   remoteName?: string;
+  extensionMode?: ExtensionRuntimeMode;
+  extensionPath?: string;
   workspaceTrusted: boolean;
   workspaceFile?: string;
   workspaceFolders: WorkspaceFolderSnapshot[];
