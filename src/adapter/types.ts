@@ -46,6 +46,7 @@ export interface TabGroupSnapshot {
 export interface VsCodeSnapshot {
   schemaVersion: number;
   capturedAtUnixMs: number;
+  hostPid?: number;
   appName: string;
   appHost: string;
   remoteName?: string;
