@@ -3,6 +3,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type { VsCodeSnapshot } from '../adapter/types';
 
+const MAX_REQUEST_AGE_MS = 60_000;
+
 export interface TerminalRestoreSession {
   host: string;
   shell: string;
@@ -67,8 +69,17 @@ async function readRequest(): Promise<RestoreRequest | undefined> {
     throw error;
   }
   const request = JSON.parse(raw) as Partial<RestoreRequest>;
-  if (request.schema_version !== 1 || request.adapter !== 'vscode' || typeof request.request_id !== 'string') {
+  if (
+    request.schema_version !== 1
+    || request.adapter !== 'vscode'
+    || typeof request.request_id !== 'string'
+    || typeof request.created_at_unix_ms !== 'number'
+  ) {
     throw new Error('Invalid Context Capsule VS Code restore request envelope');
+  }
+  if (Date.now() - request.created_at_unix_ms > MAX_REQUEST_AGE_MS) {
+    await fs.rm(requestPath(), { force: true });
+    return undefined;
   }
   return request as RestoreRequest;
 }
