@@ -3,6 +3,7 @@ import {
   VSCODE_SNAPSHOT_SCHEMA_VERSION,
   type CaptureMetadata,
   type EditorSelectionSnapshot,
+  type IntegratedTerminalSnapshot,
   type TabSnapshot,
   type VsCodeSnapshot,
 } from './types';
@@ -50,6 +51,50 @@ function tabSnapshot(tab: vscode.Tab): TabSnapshot {
   };
 }
 
+export function captureIntegratedTerminal(terminal: vscode.Terminal): IntegratedTerminalSnapshot {
+  const creationOptions = terminal.creationOptions;
+  if ('pty' in creationOptions) {
+    return {
+      name: terminal.name,
+      kind: 'extension',
+      restorable: false,
+    };
+  }
+
+  const snapshot: IntegratedTerminalSnapshot = {
+    name: terminal.name,
+    kind: 'process',
+    restorable: true,
+  };
+
+  if (creationOptions.shellPath?.trim()) {
+    snapshot.shellPath = creationOptions.shellPath;
+  }
+  if (typeof creationOptions.shellArgs === 'string') {
+    if (creationOptions.shellArgs.trim()) {
+      snapshot.shellArgs = creationOptions.shellArgs;
+    }
+  } else if (creationOptions.shellArgs && creationOptions.shellArgs.length > 0) {
+    snapshot.shellArgs = [...creationOptions.shellArgs];
+  }
+
+  const liveCwd = terminal.shellIntegration?.cwd;
+  if (liveCwd) {
+    snapshot.cwd = liveCwd.toString(true);
+    snapshot.cwdIsUri = true;
+  } else if (typeof creationOptions.cwd === 'string') {
+    if (creationOptions.cwd.trim()) {
+      snapshot.cwd = creationOptions.cwd;
+      snapshot.cwdIsUri = false;
+    }
+  } else if (creationOptions.cwd) {
+    snapshot.cwd = creationOptions.cwd.toString(true);
+    snapshot.cwdIsUri = true;
+  }
+
+  return snapshot;
+}
+
 export function captureVsCodeSnapshot(metadata: CaptureMetadata = {}): VsCodeSnapshot {
   const snapshot: VsCodeSnapshot = {
     schemaVersion: VSCODE_SNAPSHOT_SCHEMA_VERSION,
@@ -72,6 +117,7 @@ export function captureVsCodeSnapshot(metadata: CaptureMetadata = {}): VsCodeSna
     })),
     visibleEditorSelections: vscode.window.visibleTextEditors.map(selectionSnapshot),
     activeEditorUri: vscode.window.activeTextEditor?.document.uri.toString(true),
+    integratedTerminals: vscode.window.terminals.map(captureIntegratedTerminal),
   };
 
   if (metadata.extensionMode) {
