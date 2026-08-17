@@ -19,6 +19,7 @@ suite('Context Capsule VS Code adapter', () => {
 
       const snapshot = captureVsCodeSnapshot();
       assert.equal(snapshot.schemaVersion, 1);
+      assert.equal(snapshot.hostPid, process.pid);
       assert.ok(snapshot.tabGroups.some(group => group.tabs.some(tab => tab.uri === document.uri.toString(true) && tab.restorable)));
       assert.ok(snapshot.visibleEditorSelections.some(item => item.uri === document.uri.toString(true)));
     } finally {
@@ -80,7 +81,7 @@ suite('Context Capsule VS Code adapter', () => {
     assert.equal(selected, undefined);
   });
 
-  test('manual sync writes development-host identity into canonical and per-host runtime envelopes', async () => {
+  test('manual sync persists the current test-host identity and pid', async () => {
     const statePath = path.join(os.tmpdir(), `context-capsule-vscode-state-${randomUUID()}.json`);
     const previous = process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
     process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH = statePath;
@@ -89,16 +90,23 @@ suite('Context Capsule VS Code adapter', () => {
       await vscode.commands.executeCommand('context-capsule.sync');
       const canonicalEnvelope = JSON.parse(await readFile(statePath, 'utf8')) as {
         updatedAtUnixMs: number;
-        snapshot: { schemaVersion: number; extensionMode?: string; extensionPath?: string; hostDetection?: string };
+        snapshot: {
+          schemaVersion: number;
+          hostPid?: number;
+          extensionMode?: string;
+          extensionPath?: string;
+          hostDetection?: string;
+        };
       };
       const hostEnvelope = JSON.parse(await readFile(hostStatePath, 'utf8')) as typeof canonicalEnvelope;
 
       for (const envelope of [canonicalEnvelope, hostEnvelope]) {
         assert.equal(envelope.snapshot.schemaVersion, 1);
         assert.ok(envelope.updatedAtUnixMs > 0);
-        assert.equal(envelope.snapshot.extensionMode, 'development');
-        assert.ok(envelope.snapshot.extensionPath, 'Extension Development Host must persist its development extension path');
-        assert.ok(envelope.snapshot.hostDetection, 'host detection reason should be persisted for diagnostics');
+        assert.equal(envelope.snapshot.hostPid, process.pid);
+        assert.equal(envelope.snapshot.extensionMode, 'test');
+        assert.equal(envelope.snapshot.hostDetection, 'test');
+        assert.equal(envelope.snapshot.extensionPath, undefined);
       }
       assert.equal(runtimeStatePath(), statePath);
       assert.match(hostStatePath, /vscode-host-\d+\.json$/i);
