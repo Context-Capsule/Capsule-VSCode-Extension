@@ -36,8 +36,9 @@ async function syncNow(reason: string): Promise<void> {
   const snapshot = captureVsCodeSnapshot(captureMetadata);
   const destination = await writeRuntimeState(snapshot);
   const tabCount = snapshot.tabGroups.reduce((count, group) => count + group.tabs.length, 0);
+  const terminalCount = snapshot.integratedTerminals?.length ?? 0;
   log(
-    `synchronized (${reason}); host=${snapshot.extensionMode ?? 'unknown'} detection=${snapshot.hostDetection ?? 'unknown'} tabs=${tabCount} -> ${destination}`,
+    `synchronized (${reason}); host=${snapshot.extensionMode ?? 'unknown'} detection=${snapshot.hostDetection ?? 'unknown'} tabs=${tabCount} terminals=${terminalCount} -> ${destination}`,
     reason !== 'heartbeat',
   );
 }
@@ -73,7 +74,10 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
       warnings.push(...editorReport.warnings);
     }
 
-    const terminalReport = await restoreIntegratedTerminals(request.payload.terminals ?? []);
+    const terminalReport = await restoreIntegratedTerminals(
+      request.payload.editor?.integratedTerminals,
+      request.payload.terminals ?? [],
+    );
     changed += terminalReport.opened;
     skipped += terminalReport.skipped;
     warnings.push(...terminalReport.warnings);
@@ -154,10 +158,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     try {
       const snapshot = await fetchCapsuleSnapshot(name.trim());
-      const report = await restoreVsCodeSnapshot(snapshot);
-      const suffix = report.warnings.length ? ` ${report.warnings.length} warning(s); see Context Capsule output.` : '';
-      report.warnings.forEach(warning => log(`restore warning: ${warning}`));
-      vscode.window.showInformationMessage(`Context Capsule restored ${report.opened} VS Code tab(s); skipped ${report.skipped}.${suffix}`);
+      const editorReport = await restoreVsCodeSnapshot(snapshot);
+      const terminalReport = await restoreIntegratedTerminals(snapshot.integratedTerminals);
+      const warnings = [...editorReport.warnings, ...terminalReport.warnings];
+      const suffix = warnings.length ? ` ${warnings.length} warning(s); see Context Capsule output.` : '';
+      warnings.forEach(warning => log(`restore warning: ${warning}`));
+      vscode.window.showInformationMessage(
+        `Context Capsule restored ${editorReport.opened} VS Code tab(s) and ${terminalReport.opened} terminal(s); skipped ${editorReport.skipped + terminalReport.skipped}.${suffix}`,
+      );
     } catch (error) {
       log(`manual restore failed: ${String(error)}`);
       vscode.window.showErrorMessage(`Could not restore capsule: ${error instanceof Error ? error.message : String(error)}`);
@@ -172,6 +180,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.onDidChangeTextEditorSelection(() => scheduleSync('selection changed')),
     vscode.window.onDidChangeTextEditorViewColumn(() => scheduleSync('editor group changed')),
     vscode.workspace.onDidChangeWorkspaceFolders(() => scheduleSync('workspace folders changed')),
+    vscode.window.onDidOpenTerminal(() => scheduleSync('terminal opened')),
+    vscode.window.onDidCloseTerminal(() => scheduleSync('terminal closed')),
+    vscode.window.onDidChangeActiveTerminal(() => scheduleSync('active terminal changed')),
+    vscode.window.onDidChangeTerminalState(() => scheduleSync('terminal state changed')),
+    vscode.window.onDidChangeTerminalShellIntegration(() => scheduleSync('terminal shell integration changed')),
   ];
   context.subscriptions.push(...subscriptions);
 
