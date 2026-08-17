@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { captureVsCodeSnapshot } from '../adapter/capture';
-import { runtimeStatePath } from '../adapter/state';
+import { runtimeHostStatePath, runtimeStatePath } from '../adapter/state';
 
 suite('Context Capsule VS Code adapter', () => {
   test('captures a durable text editor and its selection as restorable', async () => {
@@ -39,25 +39,34 @@ suite('Context Capsule VS Code adapter', () => {
     }
   });
 
-  test('manual sync writes development-host identity into the runtime envelope', async () => {
+  test('manual sync writes development-host identity into canonical and per-host runtime envelopes', async () => {
     const statePath = path.join(os.tmpdir(), `context-capsule-vscode-state-${randomUUID()}.json`);
     const previous = process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
     process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH = statePath;
+    const hostStatePath = runtimeHostStatePath();
     try {
       await vscode.commands.executeCommand('context-capsule.sync');
-      const envelope = JSON.parse(await readFile(statePath, 'utf8')) as {
+      const canonicalEnvelope = JSON.parse(await readFile(statePath, 'utf8')) as {
         updatedAtUnixMs: number;
         snapshot: { schemaVersion: number; extensionMode?: string; extensionPath?: string };
       };
-      assert.equal(envelope.snapshot.schemaVersion, 1);
-      assert.ok(envelope.updatedAtUnixMs > 0);
+      const hostEnvelope = JSON.parse(await readFile(hostStatePath, 'utf8')) as typeof canonicalEnvelope;
+
+      for (const envelope of [canonicalEnvelope, hostEnvelope]) {
+        assert.equal(envelope.snapshot.schemaVersion, 1);
+        assert.ok(envelope.updatedAtUnixMs > 0);
+        assert.equal(envelope.snapshot.extensionMode, 'development');
+        assert.ok(envelope.snapshot.extensionPath, 'Extension Development Host must persist its development extension path');
+      }
       assert.equal(runtimeStatePath(), statePath);
-      assert.equal(envelope.snapshot.extensionMode, 'development');
-      assert.ok(envelope.snapshot.extensionPath, 'Extension Development Host must persist its development extension path');
+      assert.match(hostStatePath, /vscode-host-\d+\.json$/i);
     } finally {
       if (previous === undefined) delete process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH;
       else process.env.CONTEXT_CAPSULE_VSCODE_STATE_PATH = previous;
-      await rm(statePath, { force: true });
+      await Promise.all([
+        rm(statePath, { force: true }),
+        rm(hostStatePath, { force: true }),
+      ]);
     }
   });
 
