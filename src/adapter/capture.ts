@@ -73,8 +73,14 @@ export function captureVsCodeSnapshot(metadata: CaptureMetadata = {}): VsCodeSna
     activeEditorUri: vscode.window.activeTextEditor?.document.uri.toString(true),
   };
 
-  if (metadata.extensionMode) snapshot.extensionMode = metadata.extensionMode;
-  if (metadata.extensionPath) snapshot.extensionPath = metadata.extensionPath;
-  if (metadata.hostDetection) snapshot.hostDetection = metadata.hostDetection;
+  if (metadata.extensionMode) {
+    snapshot.extensionMode = metadata.extensionMode;
+  }
+  if (metadata.extensionPath) {
+    snapshot.extensionPath = metadata.extensionPath;
+  }
+  if (metadata.hostDetection) {
+    snapshot.hostDetection = metadata.hostDetection;
+  }
   return snapshot;
 }
