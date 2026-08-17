@@ -19,15 +19,33 @@ export function runtimeStatePath(environment = process.env): string {
   return path.join(base, 'context-capsule', 'vscode.json');
 }
 
+export function runtimeHostStatePath(environment = process.env, pid = process.pid): string {
+  const canonical = runtimeStatePath(environment);
+  return path.join(path.dirname(canonical), `vscode-host-${pid}.json`);
+}
+
+async function writeEnvelope(destination: string, envelope: RuntimeEnvelope): Promise<void> {
+  await mkdir(path.dirname(destination), { recursive: true });
+  const serialized = JSON.stringify(envelope);
+  const temporary = `${destination}.${process.pid}.tmp`;
+  await writeFile(temporary, serialized, 'utf8');
+  await rename(temporary, destination).catch(async error => {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'EEXIST' && code !== 'EPERM') throw error;
+    await writeFile(destination, serialized, 'utf8');
+  });
+}
+
 export async function writeRuntimeState(snapshot: VsCodeSnapshot): Promise<string> {
   const destination = runtimeStatePath();
-  await mkdir(path.dirname(destination), { recursive: true });
+  const hostDestination = runtimeHostStatePath();
   const envelope: RuntimeEnvelope = { updatedAtUnixMs: Date.now(), snapshot };
-  const temporary = `${destination}.${process.pid}.tmp`;
-  await writeFile(temporary, JSON.stringify(envelope), 'utf8');
-  await rename(temporary, destination).catch(async error => {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' && (error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
-    await writeFile(destination, JSON.stringify(envelope), 'utf8');
-  });
+
+  // The canonical file keeps backward compatibility. The per-process sidecar is
+  // the durable source when multiple VS Code extension hosts are alive at once
+  // (for example a normal window plus an Extension Development Host) and would
+  // otherwise race to overwrite vscode.json.
+  await writeEnvelope(hostDestination, envelope);
+  await writeEnvelope(destination, envelope);
   return destination;
 }
