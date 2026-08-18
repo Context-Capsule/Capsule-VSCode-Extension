@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -44,6 +44,12 @@ function parseArguments(argv) {
   return { dryRun, workspace };
 }
 
+function needsShell(command) {
+  if (process.platform !== "win32") return false;
+  const extension = extname(command).toLowerCase();
+  return extension === ".cmd" || extension === ".bat";
+}
+
 function resolveVsCodeCommand() {
   const explicit = process.env.CONTEXT_CAPSULE_VSCODE_BIN?.trim();
   if (explicit) {
@@ -51,7 +57,11 @@ function resolveVsCodeCommand() {
     if (!existsSync(resolved)) {
       throw new Error(`CONTEXT_CAPSULE_VSCODE_BIN does not exist: ${resolved}`);
     }
-    return { command: resolved, shell: false, source: "CONTEXT_CAPSULE_VSCODE_BIN" };
+    return {
+      command: resolved,
+      shell: needsShell(resolved),
+      source: "CONTEXT_CAPSULE_VSCODE_BIN",
+    };
   }
 
   if (process.platform === "win32") {
@@ -76,6 +86,23 @@ function resolveVsCodeCommand() {
   return { command: "code", shell: false, source: "PATH" };
 }
 
+async function launchDetached(command, args, shell) {
+  await new Promise((resolveLaunch, rejectLaunch) => {
+    const child = spawn(command, args, {
+      cwd: extensionRoot,
+      detached: true,
+      stdio: "ignore",
+      shell,
+    });
+
+    child.once("error", rejectLaunch);
+    child.once("spawn", () => {
+      child.unref();
+      resolveLaunch();
+    });
+  });
+}
+
 const { dryRun, workspace } = parseArguments(process.argv.slice(2));
 const vscode = resolveVsCodeCommand();
 const launchArguments = [
@@ -96,14 +123,7 @@ const plan = {
 console.log("Context Capsule VS Code Development Host launch plan:");
 console.log(JSON.stringify(plan, null, 2));
 
-if (dryRun) process.exit(0);
-
-const result = spawnSync(vscode.command, launchArguments, {
-  cwd: extensionRoot,
-  stdio: "inherit",
-  shell: vscode.shell,
-});
-if (result.error) throw result.error;
-if (result.status !== null && result.status !== 0) {
-  throw new Error(`VS Code launcher exited with status ${result.status}`);
+if (!dryRun) {
+  await launchDetached(vscode.command, launchArguments, vscode.shell);
+  console.log("VS Code Development Host launch requested successfully.");
 }
