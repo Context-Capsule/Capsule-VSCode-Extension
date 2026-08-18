@@ -10,6 +10,12 @@ import { runtimeHostLogPath, runtimeHostStatePath, runtimeStatePath } from '../a
 import { restoreIntegratedTerminals } from '../adapter/terminal-restore';
 
 suite('Context Capsule VS Code adapter', () => {
+  test('activation creates a persistent host diagnostic before tests run', async () => {
+    const log = await readFile(runtimeHostLogPath(), 'utf8');
+    assert.match(log, /activation entered; pid=/);
+    assert.match(log, /extension host PID:/);
+  });
+
   test('captures a durable text editor and its selection as restorable', async () => {
     const filePath = path.join(os.tmpdir(), `context-capsule-${randomUUID()}.txt`);
     await writeFile(filePath, 'context capsule integration test', 'utf8');
