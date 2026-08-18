@@ -34,7 +34,7 @@ export interface EditorSelectionSnapshot {
 
 export interface TabSnapshot {
   label: string;
-  inputKind: string;
+  inputKind: 'text' | string;
   uri?: string;
   active: boolean;
   dirty: boolean;
@@ -53,6 +53,8 @@ export interface IntegratedTerminalSnapshot {
   name: string;
   kind: 'process' | 'extension';
   restorable: boolean;
+  /** Terminal selected by VS Code when the snapshot was captured. */
+  active?: boolean;
   shellPath?: string;
   shellArgs?: string | string[];
   cwd?: string;
