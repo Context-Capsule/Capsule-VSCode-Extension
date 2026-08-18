@@ -77,16 +77,19 @@ function resolveVsCodeCommand() {
         : undefined,
     ].filter(Boolean);
 
-    for (const root of installRoots) {
-      const cli = join(root, "bin", "code.cmd");
-      if (existsSync(cli)) return commandDescriptor(cli, "detected VS Code CLI");
-    }
+    // VS Code's own test runner intentionally uses the application executable
+    // directly when --extensionDevelopmentPath is present. Doing the same here
+    // also avoids cmd.exe quoting around extension paths containing spaces.
     for (const root of installRoots) {
       const executable = join(root, "Code.exe");
       if (existsSync(executable)) return commandDescriptor(executable, "detected Code.exe");
     }
+    for (const root of installRoots) {
+      const cli = join(root, "bin", "code.cmd");
+      if (existsSync(cli)) return commandDescriptor(cli, "detected VS Code CLI fallback");
+    }
 
-    return { command: "code.cmd", shell: true, source: "PATH" };
+    return { command: "code.cmd", shell: true, source: "PATH fallback" };
   }
 
   return { command: "code", shell: false, source: "PATH" };
