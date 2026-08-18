@@ -53,7 +53,7 @@ To open a particular project inside the Development Host:
 npm run dev:host -- --workspace "C:\path\to\project"
 ```
 
-On Windows the launcher prefers the installed VS Code `bin\code.cmd` CLI, then falls back to `Code.exe` and finally the `code.cmd` on `PATH`. Set `CONTEXT_CAPSULE_VSCODE_BIN` to an explicit VS Code CLI/executable when needed.
+On Windows the launcher prefers the installed `Code.exe` directly for extension-development arguments, then falls back to the installation's `bin\code.cmd` and finally `code.cmd` on `PATH`. Set `CONTEXT_CAPSULE_VSCODE_BIN` to an explicit VS Code executable/CLI when needed.
 
 When the development extension is loaded, the Command Palette must contain the `Context Capsule:` commands contributed by `package.json`. Activation then creates `%LOCALAPPDATA%\ContextCapsule\logs\vscode-host-<PID>.log` before host-identity probing. If neither the commands nor that log exist, diagnose development-extension loading before changing Context Capsule's capture/restore logic.
 
