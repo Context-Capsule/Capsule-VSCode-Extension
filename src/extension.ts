@@ -41,6 +41,20 @@ function logHostIdentityDetails(): void {
   }
 }
 
+function fallbackMetadata(context: vscode.ExtensionContext, error: unknown): CaptureMetadata {
+  const extensionMode = context.extensionMode === vscode.ExtensionMode.Development
+    ? 'development'
+    : context.extensionMode === vscode.ExtensionMode.Test
+      ? 'test'
+      : 'production';
+  return {
+    extensionMode,
+    extensionPath: extensionMode === 'development' ? context.extensionPath : undefined,
+    hostDetection: extensionMode === 'development' ? 'self-development' : extensionMode,
+    hostDiagnostics: [`host identity probe failed: ${String(error)}`],
+  };
+}
+
 async function syncNow(reason: string): Promise<void> {
   const snapshot = captureVsCodeSnapshot(captureMetadata);
   const destination = await writeRuntimeState(snapshot);
@@ -109,8 +123,27 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   output = vscode.window.createOutputChannel('Context Capsule');
-  captureMetadata = captureMetadataForContext(context);
   context.subscriptions.push(output);
+
+  // Persist an activation marker before host-identity probing. If this file is
+  // absent after an Extension Development Host starts, Context Capsule itself
+  // was not loaded in that host (for example because installed extensions were
+  // disabled); a metadata heuristic cannot fix a host it never runs inside.
+  const activationLine = `[${new Date().toISOString()}] activation entered; pid=${process.pid} extension=${context.extension.id} extensionPath=${context.extensionPath} app=${vscode.env.appName} remote=${vscode.env.remoteName ?? '(local)'}`;
+  output.appendLine(activationLine);
+  try {
+    const activationLog = await appendRuntimeLog(activationLine);
+    output.appendLine(`[${new Date().toISOString()}] activation diagnostic log: ${activationLog}`);
+  } catch (error) {
+    output.appendLine(`[${new Date().toISOString()}] activation diagnostic log write failed: ${String(error)}`);
+  }
+
+  try {
+    captureMetadata = captureMetadataForContext(context);
+  } catch (error) {
+    captureMetadata = fallbackMetadata(context, error);
+    log(`host identity probing failed; continuing with conservative metadata: ${String(error)}`);
+  }
 
   log(`extension host PID: ${process.pid}`);
   logHostIdentityDetails();

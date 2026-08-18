@@ -8,7 +8,7 @@
   "categories": ["Other"],
   "extensionKind": ["ui"],
   "activationEvents": [
-    "onStartupFinished",
+    "*",
     "onCommand:context-capsule.inspect",
     "onCommand:context-capsule.sync",
     "onCommand:context-capsule.restore",
