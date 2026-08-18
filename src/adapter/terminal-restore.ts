@@ -31,6 +31,10 @@ function normalizePathLike(value: string): string {
   return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
 }
 
+function normalizedName(value: string): string {
+  return value.trim().toLocaleLowerCase('en-US');
+}
+
 function shellIdentity(value: string): string {
   return path.basename(normalizePathLike(value)).toLocaleLowerCase('en-US');
 }
@@ -40,6 +44,10 @@ function terminalMatches(
   current: IntegratedTerminalSnapshot,
 ): boolean {
   if (saved.kind !== 'process' || current.kind !== 'process') {
+    return false;
+  }
+
+  if (saved.name.trim() && normalizedName(saved.name) !== normalizedName(current.name)) {
     return false;
   }
 
@@ -53,10 +61,6 @@ function terminalMatches(
     if (!current.cwd || normalizePathLike(saved.cwd) !== normalizePathLike(current.cwd)) {
       return false;
     }
-  }
-
-  if (!saved.shellPath && !saved.cwd) {
-    return saved.name.trim().toLocaleLowerCase('en-US') === current.name.trim().toLocaleLowerCase('en-US');
   }
 
   return true;
