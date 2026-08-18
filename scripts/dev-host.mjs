@@ -50,6 +50,10 @@ function needsShell(command) {
   return extension === ".cmd" || extension === ".bat";
 }
 
+function commandDescriptor(command, source) {
+  return { command, shell: needsShell(command), source };
+}
+
 function resolveVsCodeCommand() {
   const explicit = process.env.CONTEXT_CAPSULE_VSCODE_BIN?.trim();
   if (explicit) {
@@ -57,28 +61,30 @@ function resolveVsCodeCommand() {
     if (!existsSync(resolved)) {
       throw new Error(`CONTEXT_CAPSULE_VSCODE_BIN does not exist: ${resolved}`);
     }
-    return {
-      command: resolved,
-      shell: needsShell(resolved),
-      source: "CONTEXT_CAPSULE_VSCODE_BIN",
-    };
+    return commandDescriptor(resolved, "CONTEXT_CAPSULE_VSCODE_BIN");
   }
 
   if (process.platform === "win32") {
-    const candidates = [
+    const installRoots = [
       process.env.LOCALAPPDATA
-        ? join(process.env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe")
+        ? join(process.env.LOCALAPPDATA, "Programs", "Microsoft VS Code")
         : undefined,
       process.env.ProgramFiles
-        ? join(process.env.ProgramFiles, "Microsoft VS Code", "Code.exe")
+        ? join(process.env.ProgramFiles, "Microsoft VS Code")
         : undefined,
       process.env["ProgramFiles(x86)"]
-        ? join(process.env["ProgramFiles(x86)"], "Microsoft VS Code", "Code.exe")
+        ? join(process.env["ProgramFiles(x86)"], "Microsoft VS Code")
         : undefined,
     ].filter(Boolean);
 
-    const installed = candidates.find(candidate => existsSync(candidate));
-    if (installed) return { command: installed, shell: false, source: "detected Code.exe" };
+    for (const root of installRoots) {
+      const cli = join(root, "bin", "code.cmd");
+      if (existsSync(cli)) return commandDescriptor(cli, "detected VS Code CLI");
+    }
+    for (const root of installRoots) {
+      const executable = join(root, "Code.exe");
+      if (existsSync(executable)) return commandDescriptor(executable, "detected Code.exe");
+    }
 
     return { command: "code.cmd", shell: true, source: "PATH" };
   }
