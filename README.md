@@ -23,7 +23,39 @@ npm run compile
 npm test
 ```
 
-Press **F5** to launch an Extension Development Host. The generated `$esbuild-watch` dependency has been removed; watch tasks work without installing a separate problem-matcher extension.
+### Launching the Extension Development Host
+
+For **F5**, VS Code itself must have `Capsule-VSCode-Extension` opened as the workspace folder. Merely changing the integrated terminal directory with `cd` does not change `${workspaceFolder}`. The checked-in `Run Extension` configuration passes:
+
+```text
+--extensionDevelopmentPath=${workspaceFolder}
+```
+
+so opening a parent folder and then pressing F5 can launch an Extension Development Host without loading Context Capsule from this repository.
+
+The less ambiguous development path is:
+
+```powershell
+npm run dev:host
+```
+
+`dev:host` compiles first, resolves the extension root from `scripts/dev-host.mjs` itself, verifies that `dist/extension.js` exists, and launches VS Code with the absolute extension directory in `--extensionDevelopmentPath`. It does not depend on the parent VS Code window's workspace selection.
+
+To verify the launch plan without opening another VS Code window:
+
+```powershell
+npm run dev:host:doctor
+```
+
+To open a particular project inside the Development Host:
+
+```powershell
+npm run dev:host -- --workspace "C:\path\to\project"
+```
+
+On Windows the launcher prefers the installed `Code.exe` directly for extension-development arguments, then falls back to the installation's `bin\code.cmd` and finally `code.cmd` on `PATH`. Set `CONTEXT_CAPSULE_VSCODE_BIN` to an explicit VS Code executable/CLI when needed.
+
+When the development extension is loaded, the Command Palette must contain the `Context Capsule:` commands contributed by `package.json`. Activation then creates `%LOCALAPPDATA%\ContextCapsule\logs\vscode-host-<PID>.log` before host-identity probing. If neither the commands nor that log exist, diagnose development-extension loading before changing Context Capsule's capture/restore logic.
 
 ## CLI connection
 
