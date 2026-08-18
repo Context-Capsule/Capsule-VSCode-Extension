@@ -67,7 +67,9 @@ export function selectWorkspaceDevelopmentPath(
     .filter(extension => workspacePaths.some(workspace => pathsOverlap(workspace, extension.fsPath, platform)))
     .map(extension => extension.fsPath);
 
-  if (candidates.length === 0) return undefined;
+  if (candidates.length === 0) {
+    return undefined;
+  }
 
   return candidates
     .map(candidate => ({
@@ -114,7 +116,9 @@ export function selectLikelyDevelopmentPath(
     && !extension.hasInstallMetadata
     && !roots.some(root => pathInside(extension.fsPath, root, platform)));
 
-  if (unmanaged.length !== 1) return undefined;
+  if (unmanaged.length !== 1) {
+    return undefined;
+  }
   return { path: unmanaged[0]!.fsPath, detection: 'unmanaged-development-extension' };
 }
 
