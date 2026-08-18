@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { captureIntegratedTerminal, captureVsCodeSnapshot } from '../adapter/capture';
-import { selectWorkspaceDevelopmentPath } from '../adapter/host-identity';
+import { selectLikelyDevelopmentPath, selectWorkspaceDevelopmentPath } from '../adapter/host-identity';
 import { runtimeHostLogPath, runtimeHostStatePath, runtimeStatePath } from '../adapter/state';
 import { restoreIntegratedTerminals } from '../adapter/terminal-restore';
 
@@ -108,6 +108,65 @@ suite('Context Capsule VS Code adapter', () => {
       'linux',
     );
     assert.equal(selected, '/work/repo/packages/extension');
+  });
+
+  test('detects a Dev Host extension outside the opened workspace without misusing Context Capsule extensionMode', () => {
+    const selected = selectLikelyDevelopmentPath(
+      ['C:\\work\\sample-app'],
+      [
+        {
+          id: 'context-capsule.context-capsule',
+          scheme: 'file',
+          fsPath: 'C:\\Users\\dev\\.vscode\\extensions\\context-capsule-0.1.0',
+          hasInstallMetadata: true,
+        },
+        {
+          id: 'example.extension-under-test',
+          scheme: 'file',
+          fsPath: 'D:\\source\\extension-under-test',
+          hasInstallMetadata: false,
+        },
+        {
+          id: 'vscode.git',
+          scheme: 'file',
+          fsPath: 'C:\\Program Files\\Microsoft VS Code\\resources\\app\\extensions\\git',
+          hasInstallMetadata: false,
+        },
+      ],
+      'context-capsule.context-capsule',
+      'C:\\Program Files\\Microsoft VS Code\\resources\\app',
+      'C:\\Users\\dev',
+      'win32',
+    );
+    assert.deepEqual(selected, {
+      path: 'D:\\source\\extension-under-test',
+      detection: 'unmanaged-development-extension',
+    });
+  });
+
+  test('does not classify installed extensions outside the workspace as a Dev Host', () => {
+    const selected = selectLikelyDevelopmentPath(
+      ['C:\\work\\ordinary-project'],
+      [
+        {
+          id: 'context-capsule.context-capsule',
+          scheme: 'file',
+          fsPath: 'C:\\Users\\dev\\.vscode\\extensions\\context-capsule-0.1.0',
+          hasInstallMetadata: true,
+        },
+        {
+          id: 'publisher.tool',
+          scheme: 'file',
+          fsPath: 'C:\\Users\\dev\\.vscode\\extensions\\publisher.tool-2.0.0',
+          hasInstallMetadata: true,
+        },
+      ],
+      'context-capsule.context-capsule',
+      'C:\\Program Files\\Microsoft VS Code\\resources\\app',
+      'C:\\Users\\dev',
+      'win32',
+    );
+    assert.equal(selected, undefined);
   });
 
   test('does not classify a normal workspace as a development host', () => {

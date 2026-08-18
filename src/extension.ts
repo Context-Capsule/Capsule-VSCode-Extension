@@ -32,13 +32,22 @@ function log(message: string, persist = true): void {
   }
 }
 
+function logHostIdentityDetails(): void {
+  log(
+    `host identity: mode=${captureMetadata.extensionMode ?? 'unknown'} detection=${captureMetadata.hostDetection ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
+  );
+  for (const diagnostic of captureMetadata.hostDiagnostics ?? []) {
+    log(`host probe: ${diagnostic}`);
+  }
+}
+
 async function syncNow(reason: string): Promise<void> {
   const snapshot = captureVsCodeSnapshot(captureMetadata);
   const destination = await writeRuntimeState(snapshot);
   const tabCount = snapshot.tabGroups.reduce((count, group) => count + group.tabs.length, 0);
   const terminalCount = snapshot.integratedTerminals?.length ?? 0;
   log(
-    `synchronized (${reason}); host=${snapshot.extensionMode ?? 'unknown'} detection=${snapshot.hostDetection ?? 'unknown'} tabs=${tabCount} terminals=${terminalCount} -> ${destination}`,
+    `synchronized (${reason}); pid=${snapshot.hostPid ?? process.pid} host=${snapshot.extensionMode ?? 'unknown'} detection=${snapshot.hostDetection ?? 'unknown'} tabs=${tabCount} terminals=${terminalCount} workspaces=${snapshot.workspaceFolders.length} -> ${destination}`,
     reason !== 'heartbeat',
   );
 }
@@ -53,7 +62,7 @@ function scheduleSync(reason: string): void {
 async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
   if (!snapshotTargetsHost(request.payload.editor, captureMetadata)) {
     log(
-      `restore ${request.request_id}: request targets another VS Code host; current mode=${captureMetadata.extensionMode ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
+      `restore ${request.request_id}: request targets another VS Code host; current mode=${captureMetadata.extensionMode ?? 'unknown'} detection=${captureMetadata.hostDetection ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
     );
     return;
   }
@@ -104,9 +113,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(output);
 
   log(`extension host PID: ${process.pid}`);
-  log(
-    `host identity: mode=${captureMetadata.extensionMode ?? 'unknown'} detection=${captureMetadata.hostDetection ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
-  );
+  logHostIdentityDetails();
   log(`host runtime state: ${runtimeHostStatePath()}`);
   log(`host diagnostic log: ${runtimeHostLogPath()}`);
 
@@ -133,15 +140,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log(`Canonical runtime state: ${runtimeStatePath()}`);
       log(`This host runtime state: ${runtimeHostStatePath()}`);
       log(`This host diagnostic log: ${runtimeHostLogPath()}`);
-      log(
-        `This host identity: mode=${captureMetadata.extensionMode ?? 'unknown'} detection=${captureMetadata.hostDetection ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
-      );
+      logHostIdentityDetails();
       output.show(true);
       vscode.window.showInformationMessage('Context Capsule CLI connection is healthy.');
     } catch (error) {
       log(`Diagnostics failed: ${String(error)}`);
       log(`Canonical runtime state: ${runtimeStatePath()}`);
       log(`This host diagnostic log: ${runtimeHostLogPath()}`);
+      logHostIdentityDetails();
       output.show(true);
       vscode.window.showErrorMessage(`Context Capsule CLI unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }

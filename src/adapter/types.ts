@@ -1,12 +1,18 @@
 export const VSCODE_SNAPSHOT_SCHEMA_VERSION = 1;
 
 export type ExtensionRuntimeMode = 'development' | 'production' | 'test';
-export type HostDetection = 'self-development' | 'workspace-development-extension' | 'production' | 'test';
+export type HostDetection =
+  | 'self-development'
+  | 'workspace-development-extension'
+  | 'unmanaged-development-extension'
+  | 'production'
+  | 'test';
 
 export interface CaptureMetadata {
   extensionMode?: ExtensionRuntimeMode;
   extensionPath?: string;
   hostDetection?: HostDetection;
+  hostDiagnostics?: string[];
 }
 
 export interface WorkspaceFolderSnapshot {
