@@ -48,42 +48,65 @@ suite('Context Capsule VS Code adapter', () => {
     }
   });
 
-  test('captures integrated terminal launch context and treats the live terminal as already satisfied', async () => {
+  test('captures active terminal state and reveals an already-existing saved terminal', async () => {
     const name = `Context Capsule terminal ${randomUUID()}`;
     const cwd = os.tmpdir();
     const terminal = vscode.window.createTerminal({ name, cwd });
     try {
+      terminal.show(false);
       const captured = captureIntegratedTerminal(terminal);
       assert.equal(captured.kind, 'process');
       assert.equal(captured.restorable, true);
       assert.equal(captured.name, name);
       assert.equal(captured.cwd, cwd);
       assert.equal(captured.cwdIsUri, false);
+      assert.equal(captured.active, true);
 
       const snapshot = captureVsCodeSnapshot();
-      assert.ok(snapshot.integratedTerminals?.some(item => item.name === name && item.cwd === cwd));
+      assert.ok(snapshot.integratedTerminals?.some(item => item.name === name && item.cwd === cwd && item.active));
 
+      terminal.hide();
       const before = vscode.window.terminals.length;
       const report = await restoreIntegratedTerminals([captured]);
       assert.equal(report.opened, 0);
-      assert.equal(report.skipped, 1);
+      assert.equal(report.revealed, 1);
+      assert.equal(report.skipped, 0);
       assert.equal(vscode.window.terminals.length, before);
     } finally {
       terminal.dispose();
     }
   });
 
-  test('restores a missing integrated terminal without replaying command history', async () => {
+  test('reveals the only terminal from a legacy snapshot that lacks active metadata', async () => {
+    const name = `Context Capsule legacy terminal ${randomUUID()}`;
+    const terminal = vscode.window.createTerminal({ name, cwd: os.tmpdir() });
+    try {
+      const captured = captureIntegratedTerminal(terminal);
+      const { active: _active, ...legacy } = captured;
+      terminal.hide();
+
+      const report = await restoreIntegratedTerminals([legacy]);
+      assert.equal(report.opened, 0);
+      assert.equal(report.revealed, 1);
+      assert.equal(report.skipped, 0);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test('restores and reveals a missing active integrated terminal without replaying command history', async () => {
     const name = `Context Capsule restored terminal ${randomUUID()}`;
     const before = new Set(vscode.window.terminals);
     const report = await restoreIntegratedTerminals([{
       name,
       kind: 'process',
       restorable: true,
+      active: true,
       cwd: os.tmpdir(),
       cwdIsUri: false,
     }]);
     assert.equal(report.opened, 1);
+    assert.equal(report.revealed, 0);
     const created = vscode.window.terminals.find(terminal => !before.has(terminal) && terminal.name === name);
     assert.ok(created, 'missing semantic terminal should be created in this VS Code host');
     created.dispose();

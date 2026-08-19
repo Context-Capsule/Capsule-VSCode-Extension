@@ -101,7 +101,7 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
       request.payload.editor?.integratedTerminals,
       request.payload.terminals ?? [],
     );
-    changed += terminalReport.opened;
+    changed += terminalReport.opened + terminalReport.revealed;
     skipped += terminalReport.skipped;
     warnings.push(...terminalReport.warnings);
 
@@ -203,7 +203,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const suffix = warnings.length ? ` ${warnings.length} warning(s); see Context Capsule output.` : '';
       warnings.forEach(warning => log(`restore warning: ${warning}`));
       vscode.window.showInformationMessage(
-        `Context Capsule restored ${editorReport.opened} VS Code tab(s) and ${terminalReport.opened} terminal(s); skipped ${editorReport.skipped + terminalReport.skipped}.${suffix}`,
+        `Context Capsule restored ${editorReport.opened} VS Code tab(s) and ${terminalReport.opened + terminalReport.revealed} terminal(s); skipped ${editorReport.skipped + terminalReport.skipped}.${suffix}`,
       );
     } catch (error) {
       log(`manual restore failed: ${String(error)}`);

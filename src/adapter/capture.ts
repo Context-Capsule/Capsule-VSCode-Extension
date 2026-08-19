@@ -53,11 +53,13 @@ function tabSnapshot(tab: vscode.Tab): TabSnapshot {
 
 export function captureIntegratedTerminal(terminal: vscode.Terminal): IntegratedTerminalSnapshot {
   const creationOptions = terminal.creationOptions;
+  const active = vscode.window.activeTerminal === terminal;
   if ('pty' in creationOptions) {
     return {
       name: terminal.name,
       kind: 'extension',
       restorable: false,
+      active,
     };
   }
 
@@ -65,6 +67,7 @@ export function captureIntegratedTerminal(terminal: vscode.Terminal): Integrated
     name: terminal.name,
     kind: 'process',
     restorable: true,
+    active,
   };
 
   if (creationOptions.shellPath?.trim()) {
