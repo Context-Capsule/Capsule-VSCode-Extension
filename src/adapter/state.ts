@@ -1,7 +1,11 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { appendFile, mkdir, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import type { RuntimeEnvelope, VsCodeSnapshot } from './types';
+
+const DEFAULT_MAX_LOG_BYTES = 1024 * 1024;
+const MAX_LOG_MESSAGE_CHARS = 4096;
+let runtimeLogQueue: Promise<void> = Promise.resolve();
 
 export function runtimeStatePath(environment = process.env): string {
   const override = environment.CONTEXT_CAPSULE_VSCODE_STATE_PATH?.trim();
@@ -37,11 +41,54 @@ export function runtimeHostLogPath(environment = process.env, pid = process.pid)
   return path.join(contextDirectory, 'logs', `vscode-host-${pid}.log`);
 }
 
-export async function appendRuntimeLog(message: string): Promise<string> {
-  const destination = runtimeHostLogPath();
+function sanitizeLogMessage(message: string): string {
+  const singleLine = [...message]
+    .slice(0, MAX_LOG_MESSAGE_CHARS)
+    .map(character => /[\r\n\0]/u.test(character) || (character.charCodeAt(0) < 32 && character !== '\t') ? ' ' : character)
+    .join('');
+  return [...message].length > MAX_LOG_MESSAGE_CHARS
+    ? `${singleLine} …[truncated]`
+    : singleLine;
+}
+
+export async function appendRuntimeLogTo(
+  destination: string,
+  message: string,
+  maxBytes = DEFAULT_MAX_LOG_BYTES,
+): Promise<string> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new Error('maxBytes must be a positive safe integer');
+  }
+
   await mkdir(path.dirname(destination), { recursive: true });
-  await appendFile(destination, `${message}\n`, 'utf8');
+  const line = `${sanitizeLogMessage(message)}\n`;
+  const incomingBytes = Buffer.byteLength(line, 'utf8');
+  let currentBytes = 0;
+  try {
+    currentBytes = (await stat(destination)).size;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  if (currentBytes > 0 && currentBytes + incomingBytes > maxBytes) {
+    const rotated = `${destination}.1`;
+    await rm(rotated, { force: true });
+    await rename(destination, rotated);
+  }
+
+  await appendFile(destination, line, 'utf8');
   return destination;
+}
+
+export function appendRuntimeLog(message: string): Promise<string> {
+  const task = runtimeLogQueue.then(() => appendRuntimeLogTo(runtimeHostLogPath(), message));
+  // Keep future writes moving even if one filesystem operation fails. The
+  // caller still receives this task's rejection and can surface diagnostics.
+  runtimeLogQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
 }
 
 async function writeEnvelope(destination: string, envelope: RuntimeEnvelope): Promise<void> {
