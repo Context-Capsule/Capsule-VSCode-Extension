@@ -5,6 +5,7 @@ import type { RuntimeEnvelope, VsCodeSnapshot } from './types';
 
 const DEFAULT_MAX_LOG_BYTES = 1024 * 1024;
 const MAX_LOG_MESSAGE_CHARS = 4096;
+let runtimeLogQueue: Promise<void> = Promise.resolve();
 
 export function runtimeStatePath(environment = process.env): string {
   const override = environment.CONTEXT_CAPSULE_VSCODE_STATE_PATH?.trim();
@@ -79,8 +80,15 @@ export async function appendRuntimeLogTo(
   return destination;
 }
 
-export async function appendRuntimeLog(message: string): Promise<string> {
-  return appendRuntimeLogTo(runtimeHostLogPath(), message);
+export function appendRuntimeLog(message: string): Promise<string> {
+  const task = runtimeLogQueue.then(() => appendRuntimeLogTo(runtimeHostLogPath(), message));
+  // Keep future writes moving even if one filesystem operation fails. The
+  // caller still receives this task's rejection and can surface diagnostics.
+  runtimeLogQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
 }
 
 async function writeEnvelope(destination: string, envelope: RuntimeEnvelope): Promise<void> {
