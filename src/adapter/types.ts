@@ -34,7 +34,7 @@ export interface EditorSelectionSnapshot {
 
 export interface TabSnapshot {
   label: string;
-  inputKind: 'text' | string;
+  inputKind: string;
   uri?: string;
   active: boolean;
   dirty: boolean;
