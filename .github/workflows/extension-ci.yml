@@ -61,8 +61,29 @@ jobs:
       - run: npm run check-types
       - run: npm run lint
       - run: npm run compile
+      - name: Ensure Xvfb is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v xvfb-run >/dev/null 2>&1; then
+            xvfb-run --help >/dev/null
+            exit 0
+          fi
+          if ! command -v apt-get >/dev/null 2>&1; then
+            echo 'xvfb-run is missing and this runner has no apt-get package manager.' >&2
+            exit 1
+          fi
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb xauth
+          else
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb xauth
+          fi
+          command -v xvfb-run >/dev/null 2>&1
       - name: Extension Development Host tests
-        run: xvfb-run -a npm test
+        shell: bash
+        run: xvfb-run -a -s '-screen 0 1280x1024x24' npm test
       - name: Publish Linux VS Code status
         if: always()
         shell: bash
