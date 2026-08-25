@@ -67,7 +67,9 @@ export async function appendRuntimeLogTo(
   try {
     currentBytes = (await stat(destination)).size;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
   }
 
   if (currentBytes > 0 && currentBytes + incomingBytes > maxBytes) {
