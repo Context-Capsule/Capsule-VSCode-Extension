@@ -9,6 +9,20 @@ import { selectLikelyDevelopmentPath, selectWorkspaceDevelopmentPath } from '../
 import { runtimeHostLogPath, runtimeHostStatePath, runtimeStatePath } from '../adapter/state';
 import { restoreIntegratedTerminals } from '../adapter/terminal-restore';
 
+async function waitFor(
+  predicate: () => boolean,
+  message: string,
+  timeoutMs = 3_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error(message);
+    }
+    await new Promise<void>(resolve => setTimeout(resolve, 25));
+  }
+}
+
 suite('Context Capsule VS Code adapter', () => {
   test('activation creates a persistent host diagnostic before tests run', async () => {
     const log = await readFile(runtimeHostLogPath(), 'utf8');
@@ -54,6 +68,13 @@ suite('Context Capsule VS Code adapter', () => {
     const terminal = vscode.window.createTerminal({ name, cwd });
     try {
       terminal.show(false);
+      // Terminal.show() schedules a workbench focus change; activeTerminal can
+      // update a few event-loop turns later on a real Extension Development Host.
+      // Synchronize with the observable VS Code state before testing capture.
+      await waitFor(
+        () => vscode.window.activeTerminal === terminal,
+        'newly shown terminal never became the active VS Code terminal',
+      );
       const captured = captureIntegratedTerminal(terminal);
       assert.equal(captured.kind, 'process');
       assert.equal(captured.restorable, true);
