@@ -33,6 +33,7 @@ export interface SavedServiceRestart {
 export interface TerminalControlRequest {
   action: 'interrupt-running-services';
   caller_shell_pid?: number | null;
+  expected_running_services?: number | null;
 }
 
 export interface RestoreRequest {
