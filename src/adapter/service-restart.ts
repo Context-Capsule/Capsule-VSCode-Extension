@@ -17,6 +17,12 @@ export interface TerminalInterruptReport {
   error?: string;
 }
 
+export interface TerminalCoverage {
+  matched: number[];
+  missing: number[];
+  ignored: number[];
+}
+
 type StartEvent = {
   terminal: vscode.Terminal;
   execution: vscode.TerminalShellExecution;
@@ -43,9 +49,58 @@ export function forgetTerminal(terminal: vscode.Terminal): void {
   activeExecutions.delete(terminal);
 }
 
+export function reconcileObservedRunningShellPids(
+  observedRunningShellPids: readonly number[] | null | undefined,
+  terminalProcessIds: readonly number[],
+  trackedProcessIds: readonly number[],
+  callerShellPid?: number | null,
+): TerminalCoverage {
+  const normalize = (values: readonly number[]): number[] => [...new Set(values
+    .filter(value => Number.isSafeInteger(value) && value > 0)
+    .map(value => Math.trunc(value)))]
+    .sort((left, right) => left - right);
+
+  const observed = normalize(observedRunningShellPids ?? [])
+    .filter(pid => !callerShellPid || pid !== callerShellPid);
+  const actualTerminals = new Set(normalize(terminalProcessIds));
+  const tracked = new Set(normalize(trackedProcessIds));
+  const matched: number[] = [];
+  const missing: number[] = [];
+  const ignored: number[] = [];
+
+  for (const pid of observed) {
+    if (!actualTerminals.has(pid)) {
+      ignored.push(pid);
+    } else if (tracked.has(pid)) {
+      matched.push(pid);
+    } else {
+      missing.push(pid);
+    }
+  }
+
+  return { matched, missing, ignored };
+}
+
+async function terminalProcessId(terminal: vscode.Terminal): Promise<number | undefined> {
+  // processId can briefly be undefined while a newly created terminal is still
+  // starting. Give VS Code a short chance to publish the stable shell PID so
+  // the safety cross-check compares identities instead of process counts.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const pid = await terminal.processId;
+    if (typeof pid === 'number' && pid > 0) {
+      return pid;
+    }
+    if (attempt < 5) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+  return undefined;
+}
+
 export async function interruptRunningTerminalServices(
   callerShellPid: number | null | undefined,
-  expectedRunningServices: number | null | undefined,
+  observedRunningShellPids: readonly number[] | null | undefined,
+  legacyExpectedRunningServices?: number | null,
 ): Promise<TerminalInterruptReport> {
   if (!vscode.workspace.isTrusted) {
     return {
@@ -59,15 +114,24 @@ export async function interruptRunningTerminalServices(
   }
 
   const terminals = [...vscode.window.terminals];
+  const processIds = new Map<vscode.Terminal, number>();
+  for (const terminal of terminals) {
+    const pid = await terminalProcessId(terminal);
+    if (pid) {
+      processIds.set(terminal, pid);
+    }
+  }
+
   const candidates: Array<{
     terminal: vscode.Terminal;
     execution: vscode.TerminalShellExecution;
+    shellPid?: number;
     service: InterruptedTerminalService;
   }> = [];
   const warnings: string[] = [];
 
   for (const [terminal, execution] of activeExecutions) {
-    const shellPid = await terminal.processId;
+    const shellPid = processIds.get(terminal) ?? await terminalProcessId(terminal);
     if (callerShellPid && shellPid === callerShellPid) {
       continue;
     }
@@ -117,6 +181,7 @@ export async function interruptRunningTerminalServices(
     candidates.push({
       terminal,
       execution,
+      shellPid,
       service: {
         terminal_index: terminalIndex,
         terminal_name: terminal.name,
@@ -127,19 +192,52 @@ export async function interruptRunningTerminalServices(
     });
   }
 
-  if (
-    typeof expectedRunningServices === 'number'
-    && expectedRunningServices >= 0
-    && candidates.length !== expectedRunningServices
+  if (observedRunningShellPids && observedRunningShellPids.length > 0) {
+    const coverage = reconcileObservedRunningShellPids(
+      observedRunningShellPids,
+      [...processIds.values()],
+      candidates.flatMap(candidate => candidate.shellPid ? [candidate.shellPid] : []),
+      callerShellPid,
+    );
+    if (coverage.ignored.length > 0) {
+      warnings.push(
+        `Ignored ${coverage.ignored.length} VS Code-descendant helper/nested shell process observation(s) because their PID does not belong to an actual integrated terminal.`,
+      );
+    }
+    if (coverage.missing.length > 0) {
+      return {
+        ok: false,
+        interrupted: 0,
+        skipped: candidates.length,
+        services: [],
+        warnings,
+        error: `CLI process discovery reports a running command in integrated terminal PID(s) ${coverage.missing.join(', ')}, but VS Code shell integration cannot identify a trusted replayable command for them; no VS Code command was interrupted.`,
+      };
+    }
+  } else if (
+    typeof legacyExpectedRunningServices === 'number'
+    && legacyExpectedRunningServices > 0
   ) {
-    return {
-      ok: false,
-      interrupted: 0,
-      skipped: candidates.length,
-      services: [],
-      warnings,
-      error: `VS Code shell integration can account for ${candidates.length} safely replayable running command(s), but CLI process discovery observed ${expectedRunningServices}; no VS Code command was interrupted.`,
-    };
+    // Backward compatibility for older CLI builds that supplied only a count.
+    // A count cannot distinguish real integrated terminals from nested/helper
+    // shells under Code.exe, so only fail when shell integration sees none at
+    // all. Otherwise capture every trusted active execution and keep the count
+    // mismatch as a diagnostic warning.
+    if (candidates.length === 0) {
+      return {
+        ok: false,
+        interrupted: 0,
+        skipped: 0,
+        services: [],
+        warnings,
+        error: `CLI process discovery observed ${legacyExpectedRunningServices} VS Code-descendant running process(es), but VS Code shell integration cannot identify any trusted replayable command; no VS Code command was interrupted.`,
+      };
+    }
+    if (candidates.length !== legacyExpectedRunningServices) {
+      warnings.push(
+        `CLI process discovery observed ${legacyExpectedRunningServices} VS Code-descendant running process(es), while shell integration identified ${candidates.length} actual running command(s); using shell integration as the authoritative source.`,
+      );
+    }
   }
 
   for (const candidate of candidates) {
