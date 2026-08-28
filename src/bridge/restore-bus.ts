@@ -33,6 +33,8 @@ export interface SavedServiceRestart {
 export interface TerminalControlRequest {
   action: 'interrupt-running-services';
   caller_shell_pid?: number | null;
+  observed_running_shell_pids?: number[];
+  // Accepted for compatibility with CLI builds from before PID-based matching.
   expected_running_services?: number | null;
 }
 
