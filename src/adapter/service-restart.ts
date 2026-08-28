@@ -83,14 +83,14 @@ export function reconcileObservedRunningShellPids(
 
 async function terminalProcessId(terminal: vscode.Terminal): Promise<number | undefined> {
   // processId can briefly be undefined while a newly created terminal is still
-  // starting. Give VS Code a short chance to publish the stable shell PID so
-  // the safety cross-check compares identities instead of process counts.
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  // starting. Give VS Code up to roughly one second to publish the stable shell
+  // PID so the safety cross-check compares identities instead of process counts.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     const pid = await terminal.processId;
     if (typeof pid === 'number' && pid > 0) {
       return pid;
     }
-    if (attempt < 5) {
+    if (attempt < 19) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
@@ -115,10 +115,13 @@ export async function interruptRunningTerminalServices(
 
   const terminals = [...vscode.window.terminals];
   const processIds = new Map<vscode.Terminal, number>();
+  const unresolvedTerminalNames: string[] = [];
   for (const terminal of terminals) {
     const pid = await terminalProcessId(terminal);
     if (pid) {
       processIds.set(terminal, pid);
+    } else {
+      unresolvedTerminalNames.push(terminal.name);
     }
   }
 
@@ -193,6 +196,17 @@ export async function interruptRunningTerminalServices(
   }
 
   if (observedRunningShellPids && observedRunningShellPids.length > 0) {
+    if (unresolvedTerminalNames.length > 0) {
+      return {
+        ok: false,
+        interrupted: 0,
+        skipped: candidates.length,
+        services: [],
+        warnings,
+        error: `VS Code did not publish a stable processId for integrated terminal(s) ${unresolvedTerminalNames.map(name => `'${name}'`).join(', ')}; no command was interrupted because terminal identity coverage is incomplete.`,
+      };
+    }
+
     const coverage = reconcileObservedRunningShellPids(
       observedRunningShellPids,
       [...processIds.values()],
