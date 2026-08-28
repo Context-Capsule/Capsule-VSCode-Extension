@@ -91,6 +91,7 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
     try {
       const report = await interruptRunningTerminalServices(
         request.payload.terminal_control.caller_shell_pid,
+        request.payload.terminal_control.observed_running_shell_pids,
         request.payload.terminal_control.expected_running_services,
       );
       await syncNow(`terminal interrupt ${request.request_id}`);
@@ -105,6 +106,7 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
       log(
         `terminal interrupt ${request.request_id}: interrupted ${report.interrupted}, skipped ${report.skipped}${report.error ? `; ${report.error}` : ''}`,
       );
+      report.warnings.forEach(warning => log(`terminal interrupt ${request.request_id} warning: ${warning}`));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`terminal interrupt ${request.request_id} failed: ${message}`);
