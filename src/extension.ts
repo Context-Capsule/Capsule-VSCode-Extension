@@ -2,7 +2,13 @@ import * as vscode from 'vscode';
 import { captureVsCodeSnapshot } from './adapter/capture';
 import { captureMetadataForContext } from './adapter/host-identity';
 import { restoreVsCodeSnapshot } from './adapter/restore';
-import { restoreIntegratedTerminals } from './adapter/terminal-restore';
+import {
+  forgetTerminal,
+  interruptRunningTerminalServices,
+  trackTerminalExecutionEnd,
+  trackTerminalExecutionStart,
+} from './adapter/service-restart';
+import { restoreIntegratedTerminals, startSavedTerminalServices } from './adapter/terminal-restore';
 import {
   appendRuntimeLog,
   runtimeHostLogPath,
@@ -78,6 +84,68 @@ async function handleRestoreRequest(request: RestoreRequest): Promise<void> {
     log(
       `restore ${request.request_id}: request targets another VS Code host; current mode=${captureMetadata.extensionMode ?? 'unknown'} detection=${captureMetadata.hostDetection ?? 'unknown'} path=${captureMetadata.extensionPath ?? '(none)'}`,
     );
+    return;
+  }
+
+  if (request.payload.terminal_control?.action === 'interrupt-running-services') {
+    try {
+      const report = await interruptRunningTerminalServices(
+        request.payload.terminal_control.caller_shell_pid,
+        request.payload.terminal_control.observed_running_shell_pids,
+        request.payload.terminal_control.expected_running_services,
+      );
+      await syncNow(`terminal interrupt ${request.request_id}`);
+      await completeRestore(request, {
+        ok: report.ok,
+        changed: report.interrupted,
+        skipped: report.skipped,
+        warnings: report.warnings,
+        error: report.error,
+        data: { services: report.services },
+      });
+      log(
+        `terminal interrupt ${request.request_id}: interrupted ${report.interrupted}, skipped ${report.skipped}${report.error ? `; ${report.error}` : ''}`,
+      );
+      report.warnings.forEach(warning => log(`terminal interrupt ${request.request_id} warning: ${warning}`));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`terminal interrupt ${request.request_id} failed: ${message}`);
+      await completeRestore(request, {
+        ok: false,
+        changed: 0,
+        skipped: 0,
+        warnings: [],
+        error: message,
+      }).catch(completionError => log(`terminal interrupt completion write failed: ${String(completionError)}`));
+    }
+    return;
+  }
+
+  if (request.payload.terminal_service_start) {
+    try {
+      const report = await startSavedTerminalServices(
+        request.payload.editor?.integratedTerminals,
+        request.payload.terminal_service_start.services,
+      );
+      await syncNow(`service restart ${request.request_id}`);
+      await completeRestore(request, {
+        ok: true,
+        changed: report.started,
+        skipped: report.skipped,
+        warnings: report.warnings,
+      });
+      log(`service restart ${request.request_id}: started ${report.started}, skipped ${report.skipped}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`service restart ${request.request_id} failed: ${message}`);
+      await completeRestore(request, {
+        ok: false,
+        changed: 0,
+        skipped: request.payload.terminal_service_start.services.length,
+        warnings: [],
+        error: message,
+      }).catch(completionError => log(`service restart completion write failed: ${String(completionError)}`));
+    }
     return;
   }
 
@@ -220,10 +288,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.onDidChangeTextEditorViewColumn(() => scheduleSync('editor group changed')),
     vscode.workspace.onDidChangeWorkspaceFolders(() => scheduleSync('workspace folders changed')),
     vscode.window.onDidOpenTerminal(() => scheduleSync('terminal opened')),
-    vscode.window.onDidCloseTerminal(() => scheduleSync('terminal closed')),
+    vscode.window.onDidCloseTerminal(terminal => {
+      forgetTerminal(terminal);
+      scheduleSync('terminal closed');
+    }),
     vscode.window.onDidChangeActiveTerminal(() => scheduleSync('active terminal changed')),
     vscode.window.onDidChangeTerminalState(() => scheduleSync('terminal state changed')),
     vscode.window.onDidChangeTerminalShellIntegration(() => scheduleSync('terminal shell integration changed')),
+    vscode.window.onDidStartTerminalShellExecution(event => {
+      trackTerminalExecutionStart(event);
+      scheduleSync('terminal shell execution started');
+    }),
+    vscode.window.onDidEndTerminalShellExecution(event => {
+      trackTerminalExecutionEnd(event);
+      scheduleSync('terminal shell execution ended');
+    }),
   ];
   context.subscriptions.push(...subscriptions);
 

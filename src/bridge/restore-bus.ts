@@ -15,6 +15,29 @@ export interface TerminalRestoreSession {
   profile?: string | null;
 }
 
+export interface SavedServiceRestart {
+  service_index: number;
+  source: 'external-terminal' | 'visual-studio-code';
+  host: string;
+  shell: string;
+  captured_terminal_pid?: number | null;
+  vscode_terminal_index?: number | null;
+  terminal_name?: string | null;
+  profile?: string | null;
+  working_directory?: string | null;
+  command: string;
+  pre_start_command?: string | null;
+  restart_policy: 'ask' | 'always';
+}
+
+export interface TerminalControlRequest {
+  action: 'interrupt-running-services';
+  caller_shell_pid?: number | null;
+  observed_running_shell_pids?: number[];
+  // Accepted for compatibility with CLI builds from before PID-based matching.
+  expected_running_services?: number | null;
+}
+
 export interface RestoreRequest {
   schema_version: 1;
   request_id: string;
@@ -23,6 +46,10 @@ export interface RestoreRequest {
   payload: {
     editor?: VsCodeSnapshot | null;
     terminals?: TerminalRestoreSession[];
+    terminal_control?: TerminalControlRequest;
+    terminal_service_start?: {
+      services: SavedServiceRestart[];
+    };
   };
 }
 
@@ -36,6 +63,7 @@ export interface RestoreCompletion {
   skipped: number;
   warnings: string[];
   error?: string;
+  data?: unknown;
 }
 
 export function restoreRuntimeDir(): string {
@@ -101,7 +129,14 @@ async function atomicWrite(filePath: string, value: unknown): Promise<void> {
 
 export async function completeRestore(
   request: RestoreRequest,
-  result: { ok: boolean; changed: number; skipped: number; warnings: string[]; error?: string },
+  result: {
+    ok: boolean;
+    changed: number;
+    skipped: number;
+    warnings: string[];
+    error?: string;
+    data?: unknown;
+  },
 ): Promise<void> {
   const completion: RestoreCompletion = {
     schema_version: 1,
@@ -115,6 +150,9 @@ export async function completeRestore(
   };
   if (result.error) {
     completion.error = result.error;
+  }
+  if (result.data !== undefined) {
+    completion.data = result.data;
   }
   await atomicWrite(resultPath(), completion);
 
