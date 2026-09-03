@@ -71,5 +71,9 @@
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.0.0"
   },
-  "overrides": { "diff": "^8.0.4", "serialize-javascript": "^7.0.6" }
+  "overrides": { "diff": "^8.0.4", "serialize-javascript": "^7.0.6" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Context-Capsule/Capsule-VSCode-Extension.git"
+  }
 }
