@@ -4,6 +4,7 @@
   "description": "Capture and restore VS Code workspace context with Context Capsule.",
   "version": "0.1.0",
   "publisher": "context-capsule",
+  "icon": "images/capsule-bgless.png",
   "engines": { "vscode": "^1.125.0" },
   "categories": ["Other"],
   "extensionKind": ["ui"],
